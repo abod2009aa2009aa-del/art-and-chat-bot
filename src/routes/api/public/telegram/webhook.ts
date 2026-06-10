@@ -76,7 +76,7 @@ async function stopTyping(token: string, chatId: number, mid: number | null) {
 }
 
 // ============ AI Gateway ============
-async function aiChat(messages: any[], model = "google/gemini-3-flash-preview") {
+async function aiChat(messages: any[], model = "google/gemini-2.5-flash") {
   const key = process.env.LOVABLE_API_KEY!;
   const r = await fetch(`${GATEWAY}/chat/completions`, {
     method: "POST",
@@ -183,6 +183,7 @@ function detectFile(prompt: string): { name: string; mime: string } {
 
 // ============ Main update handler ============
 async function handleUpdate(update: any, token: string) {
+  console.log("[tg] update received:", JSON.stringify(update).slice(0, 500));
   // Reactions on bot messages
   if (update.message_reaction) {
     await handleReaction(update.message_reaction, token).catch(console.error);
@@ -190,16 +191,17 @@ async function handleUpdate(update: any, token: string) {
   }
 
   const msg = update.message ?? update.edited_message;
-  if (!msg) return;
+  if (!msg) { console.log("[tg] no message in update"); return; }
 
   const chatId: number = msg.chat.id;
-  const chatType: string = msg.chat.type; // private, group, supergroup, channel
+  const chatType: string = msg.chat.type;
   const isGroup = chatType === "group" || chatType === "supergroup";
   const userId: number = msg.from?.id ?? 0;
   const userName: string = msg.from?.first_name ?? msg.from?.username ?? "صديقي";
   const text: string = (msg.text ?? msg.caption ?? "").trim();
   const isDev = userId === DEVELOPER_ID;
   const bot = await getBotInfo(token);
+  console.log(`[tg] msg from ${userId} (${userName}) in ${chatType} ${chatId}: "${text.slice(0,100)}"`);
 
   // Track group membership for cross-context recall
   if (isGroup && userId) {
@@ -275,19 +277,23 @@ async function handleUpdate(update: any, token: string) {
     }
 
     // ===== Commands =====
+    if (text.startsWith("/ping")) {
+      console.log("[tg] /ping from", userId, "chat", chatId);
+      const r: any = await tg(token, "sendMessage", { chat_id: chatId, text: "Pong! ✅ System is online", reply_to_message_id: msg.message_id });
+      console.log("[tg] /ping sendMessage result:", JSON.stringify(r));
+      return;
+    }
+
     if (text.startsWith("/start") || text.startsWith("/help")) {
       await tg(token, "sendMessage", { chat_id: chatId, text:
 `هلا والله 👋 آني ${BOT_NAME} 🔥
 
 شأقدر أسوي:
-💬 دردشة طبيعية (بالخاص ردودي أطول)
-🖼️ تحليل صور — دزلي صورة
-📄 تحليل ملفات — دزلي ملف نصي
-🎨 /img <وصف> — إنشاء صورة
-📝 /file <اسم.امتداد> <محتوى> — إنشاء ملف بأي صيغة
-🛡️ بالمجموعات (لو آني مشرف): /ban و /mute <دقائق> رداً على رسالة
-
-ذاكرتي عالية بالخاص، وبالمجموعة أتذكر السياق الحالي.`,
+💬 دردشة طبيعية
+🖼️ تحليل صور / 🎨 /img <وصف>
+📄 تحليل ملفات / 📝 /file <اسم.امتداد> <محتوى>
+🛡️ /ban و /mute <دقائق> (رداً على رسالة)
+🏓 /ping — اختبار اتصال`,
       });
       return;
     }
@@ -455,12 +461,27 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
     handlers: {
       POST: async ({ request }) => {
         const token = process.env.TELEGRAM_BOT_TOKEN;
-        if (!token) return new Response("Missing TELEGRAM_BOT_TOKEN", { status: 500 });
+        if (!token) {
+          console.error("[tg] FATAL: TELEGRAM_BOT_TOKEN missing");
+          return new Response("Missing TELEGRAM_BOT_TOKEN", { status: 500 });
+        }
         const expected = deriveSecret(token);
         const got = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
-        if (!safeEqual(got, expected)) return new Response("Unauthorized", { status: 401 });
-        const update = await request.json();
-        handleUpdate(update, token).catch((e) => console.error(e));
+        if (!safeEqual(got, expected)) {
+          console.warn("[tg] 401: bad secret token. got_len=", got.length, "expected_len=", expected.length);
+          return new Response("Unauthorized", { status: 401 });
+        }
+        let update: any;
+        try { update = await request.json(); } catch (e) {
+          console.error("[tg] invalid JSON body", e);
+          return Response.json({ ok: true });
+        }
+        console.log("[tg] POST webhook ok, update_id=", update?.update_id);
+        try {
+          await handleUpdate(update, token);
+        } catch (e: any) {
+          console.error("[tg] handleUpdate threw:", e?.stack ?? e?.message ?? e);
+        }
         return Response.json({ ok: true });
       },
     },
