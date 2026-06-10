@@ -337,10 +337,12 @@ async function handleUpdate(update: any, token: string) {
         const { name, mime } = detectFile(prompt);
         const desc = prompt.replace(/^\S+\.[a-zA-Z0-9]{1,6}\s*/, "") || prompt;
         const content = await aiChat([
-          { role: "system", content: `أنت تولّد محتوى ملف باسم "${name}". أرجع المحتوى الخام فقط بدون أي شرح ولا أسوار ماركداون ولا تعليق.` },
+          { role: "system", content: `أنت Senior Engineer. ولّد محتوى ملف "${name}" كامل وقابل للتشغيل مباشرة، نظيف وآمن وفعّال، مع تعليقات قصيرة عند الحاجة. أرجع المحتوى الخام فقط بدون أي شرح ولا أسوار ماركداون (لا \`\`\`) ولا أي نص خارجي.` },
           { role: "user", content: desc },
-        ]);
-        const clean = content.replace(/^```[a-zA-Z]*\n?/, "").replace(/```\s*$/, "");
+        ], "google/gemini-2.5-pro");
+        // Strip any code fences (start/end, even repeated)
+        let clean = content.trim();
+        clean = clean.replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
         await stopTyping(token, chatId, typingId);
         const form = new FormData();
         form.append("chat_id", String(chatId));
