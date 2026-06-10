@@ -461,12 +461,27 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
     handlers: {
       POST: async ({ request }) => {
         const token = process.env.TELEGRAM_BOT_TOKEN;
-        if (!token) return new Response("Missing TELEGRAM_BOT_TOKEN", { status: 500 });
+        if (!token) {
+          console.error("[tg] FATAL: TELEGRAM_BOT_TOKEN missing");
+          return new Response("Missing TELEGRAM_BOT_TOKEN", { status: 500 });
+        }
         const expected = deriveSecret(token);
         const got = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
-        if (!safeEqual(got, expected)) return new Response("Unauthorized", { status: 401 });
-        const update = await request.json();
-        handleUpdate(update, token).catch((e) => console.error(e));
+        if (!safeEqual(got, expected)) {
+          console.warn("[tg] 401: bad secret token. got_len=", got.length, "expected_len=", expected.length);
+          return new Response("Unauthorized", { status: 401 });
+        }
+        let update: any;
+        try { update = await request.json(); } catch (e) {
+          console.error("[tg] invalid JSON body", e);
+          return Response.json({ ok: true });
+        }
+        console.log("[tg] POST webhook ok, update_id=", update?.update_id);
+        try {
+          await handleUpdate(update, token);
+        } catch (e: any) {
+          console.error("[tg] handleUpdate threw:", e?.stack ?? e?.message ?? e);
+        }
         return Response.json({ ok: true });
       },
     },
