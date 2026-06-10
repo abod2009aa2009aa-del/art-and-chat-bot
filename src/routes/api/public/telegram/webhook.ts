@@ -76,7 +76,7 @@ async function stopTyping(token: string, chatId: number, mid: number | null) {
 }
 
 // ============ AI Gateway ============
-async function aiChat(messages: any[], model = "google/gemini-3-flash-preview") {
+async function aiChat(messages: any[], model = "google/gemini-2.5-flash") {
   const key = process.env.LOVABLE_API_KEY!;
   const r = await fetch(`${GATEWAY}/chat/completions`, {
     method: "POST",
@@ -275,19 +275,23 @@ async function handleUpdate(update: any, token: string) {
     }
 
     // ===== Commands =====
+    if (text.startsWith("/ping")) {
+      console.log("[tg] /ping from", userId, "chat", chatId);
+      const r: any = await tg(token, "sendMessage", { chat_id: chatId, text: "Pong! ✅ System is online", reply_to_message_id: msg.message_id });
+      console.log("[tg] /ping sendMessage result:", JSON.stringify(r));
+      return;
+    }
+
     if (text.startsWith("/start") || text.startsWith("/help")) {
       await tg(token, "sendMessage", { chat_id: chatId, text:
 `هلا والله 👋 آني ${BOT_NAME} 🔥
 
 شأقدر أسوي:
-💬 دردشة طبيعية (بالخاص ردودي أطول)
-🖼️ تحليل صور — دزلي صورة
-📄 تحليل ملفات — دزلي ملف نصي
-🎨 /img <وصف> — إنشاء صورة
-📝 /file <اسم.امتداد> <محتوى> — إنشاء ملف بأي صيغة
-🛡️ بالمجموعات (لو آني مشرف): /ban و /mute <دقائق> رداً على رسالة
-
-ذاكرتي عالية بالخاص، وبالمجموعة أتذكر السياق الحالي.`,
+💬 دردشة طبيعية
+🖼️ تحليل صور / 🎨 /img <وصف>
+📄 تحليل ملفات / 📝 /file <اسم.امتداد> <محتوى>
+🛡️ /ban و /mute <دقائق> (رداً على رسالة)
+🏓 /ping — اختبار اتصال`,
       });
       return;
     }
