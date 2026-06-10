@@ -183,6 +183,7 @@ function detectFile(prompt: string): { name: string; mime: string } {
 
 // ============ Main update handler ============
 async function handleUpdate(update: any, token: string) {
+  console.log("[tg] update received:", JSON.stringify(update).slice(0, 500));
   // Reactions on bot messages
   if (update.message_reaction) {
     await handleReaction(update.message_reaction, token).catch(console.error);
@@ -190,16 +191,17 @@ async function handleUpdate(update: any, token: string) {
   }
 
   const msg = update.message ?? update.edited_message;
-  if (!msg) return;
+  if (!msg) { console.log("[tg] no message in update"); return; }
 
   const chatId: number = msg.chat.id;
-  const chatType: string = msg.chat.type; // private, group, supergroup, channel
+  const chatType: string = msg.chat.type;
   const isGroup = chatType === "group" || chatType === "supergroup";
   const userId: number = msg.from?.id ?? 0;
   const userName: string = msg.from?.first_name ?? msg.from?.username ?? "صديقي";
   const text: string = (msg.text ?? msg.caption ?? "").trim();
   const isDev = userId === DEVELOPER_ID;
   const bot = await getBotInfo(token);
+  console.log(`[tg] msg from ${userId} (${userName}) in ${chatType} ${chatId}: "${text.slice(0,100)}"`);
 
   // Track group membership for cross-context recall
   if (isGroup && userId) {
