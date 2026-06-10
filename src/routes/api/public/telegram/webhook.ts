@@ -90,21 +90,32 @@ async function aiChat(messages: any[], model = "google/gemini-2.5-flash") {
 
 async function aiImage(prompt: string): Promise<Buffer> {
   const key = process.env.LOVABLE_API_KEY!;
-  // Use Gemini image model — more permissive + reliable
-  const r = await fetch(`${GATEWAY}/images/generations`, {
-    method: "POST",
-    headers: { "Lovable-API-Key": key, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/gemini-3.1-flash-image-preview",
-      messages: [{ role: "user", content: prompt }],
-      modalities: ["image", "text"],
-    }),
-  });
-  if (!r.ok) throw new Error(`Image ${r.status}: ${await r.text()}`);
-  const data = await r.json();
-  const b64 = data.data?.[0]?.b64_json;
-  if (!b64) throw new Error("لا توجد بيانات صورة في الرد");
-  return Buffer.from(b64, "base64");
+  // Try models in order; surface real errors
+  const attempts: Array<{ model: string; body: any }> = [
+    { model: "google/gemini-2.5-flash-image", body: { model: "google/gemini-2.5-flash-image", messages: [{ role: "user", content: prompt }], modalities: ["image", "text"] } },
+    { model: "openai/gpt-image-1-mini", body: { model: "openai/gpt-image-1-mini", prompt, size: "1024x1024", quality: "low", n: 1 } },
+    { model: "openai/gpt-image-2", body: { model: "openai/gpt-image-2", prompt, size: "1024x1024", quality: "low", n: 1 } },
+  ];
+  let lastErr = "";
+  for (const a of attempts) {
+    try {
+      const r = await fetch(`${GATEWAY}/images/generations`, {
+        method: "POST",
+        headers: { "Lovable-API-Key": key, "Content-Type": "application/json" },
+        body: JSON.stringify(a.body),
+      });
+      const txt = await r.text();
+      if (!r.ok) { lastErr = `[${a.model}] ${r.status}: ${txt.slice(0, 300)}`; console.error("[img]", lastErr); continue; }
+      const data = JSON.parse(txt);
+      const b64 = data.data?.[0]?.b64_json;
+      if (!b64) { lastErr = `[${a.model}] لا توجد بيانات صورة`; continue; }
+      return Buffer.from(b64, "base64");
+    } catch (e: any) {
+      lastErr = `[${a.model}] ${e?.message ?? e}`;
+      console.error("[img]", lastErr);
+    }
+  }
+  throw new Error(lastErr || "فشل توليد الصورة");
 }
 
 // ============ System prompt ============
