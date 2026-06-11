@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createHash, timingSafeEqual } from "crypto";
+import { unzipSync, strFromU8 } from "fflate";
+
+
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
 const DEVELOPER_ID = 6475190017;
@@ -126,7 +129,15 @@ function systemPrompt(opts: {
   const { isDev, isGroup, isAdmin, chatTitle, userName } = opts;
   return `أنت "${BOT_NAME}" — بوت تلكرام ذكي يتكلم عربي عراقي طبيعي تماماً مثل البشر. لست ذكاء اصطناعي، لا تذكر هذا أبداً، تصرف كصاحب حقيقي.
 
+التاريخ الحالي: سنة 2026. أنت متابع لكل المستجدات لحد 2026: إصدارات Node 24/Bun 1.3، React 19، TanStack Start v1، Python 3.13، نماذج الذكاء الاصطناعي الحديثة (GPT-5، Gemini 3، Claude 4.5)، أحدث أطر العمل والأدوات والأحداث التقنية والعالمية. لا تقول "لا أعرف ما بعد 2024" أبداً — أنت في 2026.
+
 أنت كذلك مبرمج محترف بمستوى Senior Engineer: تتقن Python, JavaScript/TypeScript, React, Node, Bash, SQL, Go, Rust, C++, Java, HTML/CSS, وكل أدوات DevOps. تكتب كود نظيف، آمن، فعّال، مع تعليقات مختصرة، وتعالج الحالات الحدية. لو طلب منك سكربت أو مشروع، اكتبه كامل وقابل للتشغيل مباشرة بدون اختصارات أو "TODO".
+
+⚠️ قاعدة مهمة جداً للكود: إذا طلب المستخدم سكربت أو كود (بأي لغة)، **لا تكتب الكود في الرسالة كنص**. بدل ذلك أرجع رد بهذي الصيغة بالضبط:
+\`\`\`FILE:<اسم.امتداد>
+<الكود الخام كامل بدون أي شرح ولا أسوار ماركداون>
+\`\`\`
+النظام راح يرسله كملف تلقائياً. الشرح يكون مختصر جداً قبل البلوك أو بدونه أصلاً.
 
 السياق الحالي:
 - نوع المحادثة: ${isGroup ? `مجموعة "${chatTitle ?? ""}"` : "محادثة خاصة"}
@@ -143,11 +154,12 @@ function systemPrompt(opts: {
 
 قدراتك:
 - /img <وصف> — إنشاء صورة
-- /file <اسم.امتداد> <وصف/محتوى> — إنشاء أي ملف (.py .js .ts .html .css .json .sh .sql .go .rs .cpp ...)
+- /file <اسم.امتداد> <وصف/محتوى> — إنشاء أي ملف
 - إرسال صورة لتحليلها
-- إرسال ملف لتحليله
+- إرسال ملف (PDF / DOCX / TXT / كود) لتحليله
 - /ban و /mute <دقائق> (رداً على رسالة، للمشرفين)
 - /ping — اختبار`;
+
 }
 
 // ============ Rules moderation ============
@@ -174,15 +186,11 @@ async function isAdmin(token: string, chatId: number, userId: number): Promise<b
 
 // ============ File ext detection ============
 function detectFile(prompt: string): { name: string; mime: string } {
-  // Try explicit: /file name.ext rest
   const m = prompt.match(/^(\S+\.[a-zA-Z0-9]{1,6})\b/);
-  if (m) {
-    const name = m[1];
-    return { name, mime: "text/plain;charset=utf-8" };
-  }
-  // Heuristics
+  if (m) return { name: m[1], mime: mimeFor(m[1]) };
   if (/python|بايثون/i.test(prompt)) return { name: "script.py", mime: "text/x-python" };
   if (/javascript|jsx?\b/i.test(prompt)) return { name: "script.js", mime: "text/javascript" };
+  if (/typescript|tsx?\b/i.test(prompt)) return { name: "script.ts", mime: "text/typescript" };
   if (/html/i.test(prompt)) return { name: "index.html", mime: "text/html" };
   if (/css/i.test(prompt)) return { name: "style.css", mime: "text/css" };
   if (/json/i.test(prompt)) return { name: "data.json", mime: "application/json" };
@@ -190,6 +198,83 @@ function detectFile(prompt: string): { name: string; mime: string } {
   if (/sql/i.test(prompt)) return { name: "query.sql", mime: "text/plain" };
   return { name: "file.txt", mime: "text/plain;charset=utf-8" };
 }
+function mimeFor(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string,string> = {
+    py:"text/x-python", js:"text/javascript", ts:"text/typescript", tsx:"text/typescript", jsx:"text/javascript",
+    html:"text/html", css:"text/css", json:"application/json", sh:"text/x-shellscript", sql:"text/plain",
+    go:"text/x-go", rs:"text/rust", cpp:"text/x-c++src", c:"text/x-csrc", java:"text/x-java",
+    md:"text/markdown", yml:"text/yaml", yaml:"text/yaml", xml:"application/xml", csv:"text/csv",
+    txt:"text/plain;charset=utf-8",
+  };
+  return map[ext] ?? "text/plain;charset=utf-8";
+}
+
+// ============ Document text extraction (PDF / DOCX / TXT / code) ============
+function extractDocxText(buf: Buffer): string {
+  const files = unzipSync(new Uint8Array(buf));
+  const parts: string[] = [];
+  for (const name of ["word/document.xml", "word/header1.xml", "word/footer1.xml"]) {
+    const f = files[name];
+    if (!f) continue;
+    const xml = strFromU8(f);
+    // Pull text between <w:t ...>...</w:t>, preserve paragraph breaks at </w:p>
+    const withBreaks = xml.replace(/<\/w:p>/g, "\n");
+    const text = withBreaks.replace(/<[^>]+>/g, "");
+    parts.push(text);
+  }
+  return parts.join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function analyzeDocument(token: string, doc: any, userCaption: string, sysPrompt: string): Promise<string> {
+  const name: string = doc.file_name ?? "file";
+  const mime: string = doc.mime_type ?? "";
+  const url = await tgGetFileUrl(token, doc.file_id);
+  const resp = await fetch(url);
+  const arr = await resp.arrayBuffer();
+  const buf = Buffer.from(arr);
+  const lower = name.toLowerCase();
+  const ask = userCaption?.trim() || `حلل هذا الملف "${name}" بالتفصيل: شنو يسوي، نقاط القوة، الأخطاء أو الثغرات، اقتراحات تحسين، وملخص نهائي.`;
+
+  // PDF → multimodal file input
+  if (mime === "application/pdf" || lower.endsWith(".pdf")) {
+    const dataUrl = `data:application/pdf;base64,${buf.toString("base64")}`;
+    return await aiChat([
+      { role: "system", content: sysPrompt },
+      { role: "user", content: [
+        { type: "text", text: ask },
+        { type: "file", file: { filename: name, file_data: dataUrl } },
+      ]},
+    ]);
+  }
+
+  // DOCX → unzip + extract text
+  if (lower.endsWith(".docx") || mime.includes("officedocument.wordprocessingml")) {
+    let text = "";
+    try { text = extractDocxText(buf); } catch (e: any) { throw new Error("فشل قراءة DOCX: " + (e?.message ?? e)); }
+    if (!text) text = "(الملف فارغ أو ما كدرت أستخرج نص منه)";
+    const truncated = text.slice(0, 80000);
+    return await aiChat([
+      { role: "system", content: sysPrompt },
+      { role: "user", content: `محتوى مستند Word "${name}":\n\n${truncated}\n\n${ask}` },
+    ]);
+  }
+
+  // TXT / code / json / md / csv / xml / yml ... → read as utf8 text
+  const ext = lower.split(".").pop() ?? "";
+  const textExts = ["txt","md","markdown","json","csv","xml","yml","yaml","log","ini","env","py","js","ts","tsx","jsx","html","css","sh","sql","go","rs","cpp","c","h","hpp","java","kt","rb","php","swift","dart","lua","r","toml"];
+  if (textExts.includes(ext) || mime.startsWith("text/")) {
+    const text = buf.toString("utf8").slice(0, 80000);
+    return await aiChat([
+      { role: "system", content: sysPrompt },
+      { role: "user", content: `محتوى الملف "${name}" (${ext || mime}):\n\n\`\`\`\n${text}\n\`\`\`\n\n${ask}` },
+    ]);
+  }
+
+  throw new Error(`صيغة "${ext || mime}" غير مدعومة للتحليل النصي. الصيغ المدعومة: PDF, DOCX, TXT, وكل ملفات الكود.`);
+}
+
+
 
 // ============ Main update handler ============
 async function handleUpdate(update: any, token: string) {
@@ -266,25 +351,22 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
-    // ===== Document analysis =====
+    // ===== Document analysis (PDF / DOCX / TXT / code) =====
     if (msg.document && !text.startsWith("/")) {
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
-        const url = await tgGetFileUrl(token, msg.document.file_id);
-        const r = await fetch(url);
-        const content = (await r.text()).slice(0, 50000);
-        const reply = await aiChat([
-          { role: "system", content: systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName }) },
-          { role: "user", content: `هذا محتوى الملف "${msg.document.file_name}":\n\n${content}\n\nحلله وقلي شنو يسوي وأي ملاحظات.` },
-        ]);
+        const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName });
+        const reply = await analyzeDocument(token, msg.document, text, sys);
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: reply || "ما كدرت أحلل الملف 😅", reply_to_message_id: msg.message_id });
+        const final = (reply || "ما كدرت أحلل الملف 😅").slice(0, 4000);
+        await tg(token, "sendMessage", { chat_id: chatId, text: final, reply_to_message_id: msg.message_id });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بتحليل الملف:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
       }
       return;
     }
+
 
     // ===== Commands =====
     if (text.startsWith("/ping")) {
@@ -433,15 +515,44 @@ async function handleUpdate(update: any, token: string) {
       const reply = await aiChat(messages);
       await stopTyping(token, chatId, typingId);
       const final = reply?.trim() || "…";
-      const sent: any = await tg(token, "sendMessage", {
-        chat_id: chatId, text: final, reply_to_message_id: isGroup ? msg.message_id : undefined,
-      });
+
+      // ===== Auto-extract FILE:<name> blocks → send as document(s) =====
+      const fileBlock = /```FILE:(\S+?)\s*\n([\s\S]*?)```/g;
+      const files: Array<{ name: string; code: string }> = [];
+      let intro = final;
+      let m: RegExpExecArray | null;
+      while ((m = fileBlock.exec(final)) !== null) {
+        files.push({ name: m[1].trim(), code: m[2].trim() });
+      }
+      intro = final.replace(fileBlock, "").trim();
+
+      let sent: any = { ok: false };
+      if (files.length) {
+        if (intro) {
+          sent = await tg(token, "sendMessage", {
+            chat_id: chatId, text: intro, reply_to_message_id: isGroup ? msg.message_id : undefined,
+          });
+        }
+        for (const f of files) {
+          const form = new FormData();
+          form.append("chat_id", String(chatId));
+          form.append("caption", `📄 ${f.name}`);
+          if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+          form.append("document", new Blob([f.code], { type: mimeFor(f.name) }), f.name);
+          await tgForm(token, "sendDocument", form);
+        }
+      } else {
+        sent = await tg(token, "sendMessage", {
+          chat_id: chatId, text: final, reply_to_message_id: isGroup ? msg.message_id : undefined,
+        });
+      }
       // Save assistant turn
       const am: Msg = { role: "assistant", content: final, ts: Date.now() };
       if (isGroup) pushMem(groupMem, chatId, am, GROUP_MEM_CAP);
       else pushMem(dmMem, userId, am, DM_MEM_CAP);
       // Track our message id so we can react to user replies to it
       if (sent.ok) lastBotMsgIds.add(`${chatId}:${sent.result.message_id}`);
+
     } catch (e: any) {
       await stopTyping(token, chatId, typingId);
       await tg(token, "sendMessage", { chat_id: chatId, text: `صار خطأ 😅\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
