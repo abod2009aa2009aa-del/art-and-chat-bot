@@ -11,8 +11,9 @@ const BOT_NAME = "أليسا";
 // ============ Memory (in-memory, per-worker) ============
 // Group memory: last 200 msgs per chat. DM: last 500 msgs per user.
 // (Cloudflare workers reset; for true persistence enable Cloud DB.)
-const GROUP_MEM_CAP = 200;
-const DM_MEM_CAP = 500;
+const GROUP_MEM_CAP = 2000;
+const DM_MEM_CAP = 5000;
+
 
 type Msg = { role: "user" | "assistant"; name?: string; content: string; ts: number };
 const groupMem = new Map<number, Msg[]>(); // chat_id -> msgs
