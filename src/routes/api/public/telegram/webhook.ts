@@ -350,12 +350,11 @@ async function handleUpdate(update: any, token: string) {
     set.add(chatId); userGroups.set(userId, set);
   }
 
-  // Save inbound to memory (only text)
+  // Save inbound to memory (only text) — persists to DB
   if (text && !text.startsWith("/")) {
-    const m: Msg = { role: "user", name: userName, content: text, ts: Date.now() };
-    if (isGroup) pushMem(groupMem, chatId, m, GROUP_MEM_CAP);
-    else pushMem(dmMem, userId, m, DM_MEM_CAP);
+    await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: text });
   }
+
 
   // ===== Group moderation (skip dev) =====
   if (isGroup && !isDev && text) {
