@@ -351,25 +351,22 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
-    // ===== Document analysis =====
+    // ===== Document analysis (PDF / DOCX / TXT / code) =====
     if (msg.document && !text.startsWith("/")) {
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
-        const url = await tgGetFileUrl(token, msg.document.file_id);
-        const r = await fetch(url);
-        const content = (await r.text()).slice(0, 50000);
-        const reply = await aiChat([
-          { role: "system", content: systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName }) },
-          { role: "user", content: `هذا محتوى الملف "${msg.document.file_name}":\n\n${content}\n\nحلله وقلي شنو يسوي وأي ملاحظات.` },
-        ]);
+        const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName });
+        const reply = await analyzeDocument(token, msg.document, text, sys);
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: reply || "ما كدرت أحلل الملف 😅", reply_to_message_id: msg.message_id });
+        const final = (reply || "ما كدرت أحلل الملف 😅").slice(0, 4000);
+        await tg(token, "sendMessage", { chat_id: chatId, text: final, reply_to_message_id: msg.message_id });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بتحليل الملف:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
       }
       return;
     }
+
 
     // ===== Commands =====
     if (text.startsWith("/ping")) {
