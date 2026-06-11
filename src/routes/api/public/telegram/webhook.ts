@@ -515,15 +515,44 @@ async function handleUpdate(update: any, token: string) {
       const reply = await aiChat(messages);
       await stopTyping(token, chatId, typingId);
       const final = reply?.trim() || "…";
-      const sent: any = await tg(token, "sendMessage", {
-        chat_id: chatId, text: final, reply_to_message_id: isGroup ? msg.message_id : undefined,
-      });
+
+      // ===== Auto-extract FILE:<name> blocks → send as document(s) =====
+      const fileBlock = /```FILE:(\S+?)\s*\n([\s\S]*?)```/g;
+      const files: Array<{ name: string; code: string }> = [];
+      let intro = final;
+      let m: RegExpExecArray | null;
+      while ((m = fileBlock.exec(final)) !== null) {
+        files.push({ name: m[1].trim(), code: m[2].trim() });
+      }
+      intro = final.replace(fileBlock, "").trim();
+
+      let sent: any = { ok: false };
+      if (files.length) {
+        if (intro) {
+          sent = await tg(token, "sendMessage", {
+            chat_id: chatId, text: intro, reply_to_message_id: isGroup ? msg.message_id : undefined,
+          });
+        }
+        for (const f of files) {
+          const form = new FormData();
+          form.append("chat_id", String(chatId));
+          form.append("caption", `📄 ${f.name}`);
+          if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+          form.append("document", new Blob([f.code], { type: mimeFor(f.name) }), f.name);
+          await tgForm(token, "sendDocument", form);
+        }
+      } else {
+        sent = await tg(token, "sendMessage", {
+          chat_id: chatId, text: final, reply_to_message_id: isGroup ? msg.message_id : undefined,
+        });
+      }
       // Save assistant turn
       const am: Msg = { role: "assistant", content: final, ts: Date.now() };
       if (isGroup) pushMem(groupMem, chatId, am, GROUP_MEM_CAP);
       else pushMem(dmMem, userId, am, DM_MEM_CAP);
       // Track our message id so we can react to user replies to it
       if (sent.ok) lastBotMsgIds.add(`${chatId}:${sent.result.message_id}`);
+
     } catch (e: any) {
       await stopTyping(token, chatId, typingId);
       await tg(token, "sendMessage", { chat_id: chatId, text: `صار خطأ 😅\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
