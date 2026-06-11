@@ -11,8 +11,9 @@ const BOT_NAME = "أليسا";
 // ============ Memory (in-memory, per-worker) ============
 // Group memory: last 200 msgs per chat. DM: last 500 msgs per user.
 // (Cloudflare workers reset; for true persistence enable Cloud DB.)
-const GROUP_MEM_CAP = 200;
-const DM_MEM_CAP = 500;
+const GROUP_MEM_CAP = 2000;
+const DM_MEM_CAP = 5000;
+
 
 type Msg = { role: "user" | "assistant"; name?: string; content: string; ts: number };
 const groupMem = new Map<number, Msg[]>(); // chat_id -> msgs
@@ -465,7 +466,10 @@ async function handleUpdate(update: any, token: string) {
     if (!text) return;
     const isMention = bot?.username && new RegExp(`@${bot.username}\\b`, "i").test(text);
     const isReplyToBot = msg.reply_to_message?.from?.id === bot?.id;
-    const isNameCall = new RegExp(`\\b${BOT_NAME}\\b`).test(text);
+    // الاسم لازم يجي مع كلام إضافي (مو بس "اليسا" لحالها)
+    const nameRe = new RegExp(`${BOT_NAME}`);
+    const isNameCall = nameRe.test(text) && text.replace(nameRe, "").trim().length >= 2;
+
     if (isGroup && !isMention && !isReplyToBot && !isNameCall && !isDev) {
       // Stay silent in groups unless addressed — but occasional mood-based reaction
       if (Math.random() < 0.05) {
@@ -489,7 +493,7 @@ async function handleUpdate(update: any, token: string) {
       const grpHist = isGroup ? (groupMem.get(chatId) ?? []) : [];
       const baseHist = isGroup ? grpHist : dmHist;
       // Take last 30 for the model (token budget)
-      for (const m of baseHist.slice(-30)) {
+      for (const m of baseHist.slice(-120)) {
         history.push({ role: m.role, content: m.role === "user" ? `${m.name ?? ""}: ${m.content}` : m.content });
       }
 
