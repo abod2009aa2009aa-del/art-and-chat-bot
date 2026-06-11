@@ -186,15 +186,11 @@ async function isAdmin(token: string, chatId: number, userId: number): Promise<b
 
 // ============ File ext detection ============
 function detectFile(prompt: string): { name: string; mime: string } {
-  // Try explicit: /file name.ext rest
   const m = prompt.match(/^(\S+\.[a-zA-Z0-9]{1,6})\b/);
-  if (m) {
-    const name = m[1];
-    return { name, mime: "text/plain;charset=utf-8" };
-  }
-  // Heuristics
+  if (m) return { name: m[1], mime: mimeFor(m[1]) };
   if (/python|بايثون/i.test(prompt)) return { name: "script.py", mime: "text/x-python" };
   if (/javascript|jsx?\b/i.test(prompt)) return { name: "script.js", mime: "text/javascript" };
+  if (/typescript|tsx?\b/i.test(prompt)) return { name: "script.ts", mime: "text/typescript" };
   if (/html/i.test(prompt)) return { name: "index.html", mime: "text/html" };
   if (/css/i.test(prompt)) return { name: "style.css", mime: "text/css" };
   if (/json/i.test(prompt)) return { name: "data.json", mime: "application/json" };
@@ -202,6 +198,83 @@ function detectFile(prompt: string): { name: string; mime: string } {
   if (/sql/i.test(prompt)) return { name: "query.sql", mime: "text/plain" };
   return { name: "file.txt", mime: "text/plain;charset=utf-8" };
 }
+function mimeFor(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string,string> = {
+    py:"text/x-python", js:"text/javascript", ts:"text/typescript", tsx:"text/typescript", jsx:"text/javascript",
+    html:"text/html", css:"text/css", json:"application/json", sh:"text/x-shellscript", sql:"text/plain",
+    go:"text/x-go", rs:"text/rust", cpp:"text/x-c++src", c:"text/x-csrc", java:"text/x-java",
+    md:"text/markdown", yml:"text/yaml", yaml:"text/yaml", xml:"application/xml", csv:"text/csv",
+    txt:"text/plain;charset=utf-8",
+  };
+  return map[ext] ?? "text/plain;charset=utf-8";
+}
+
+// ============ Document text extraction (PDF / DOCX / TXT / code) ============
+function extractDocxText(buf: Buffer): string {
+  const files = unzipSync(new Uint8Array(buf));
+  const parts: string[] = [];
+  for (const name of ["word/document.xml", "word/header1.xml", "word/footer1.xml"]) {
+    const f = files[name];
+    if (!f) continue;
+    const xml = strFromU8(f);
+    // Pull text between <w:t ...>...</w:t>, preserve paragraph breaks at </w:p>
+    const withBreaks = xml.replace(/<\/w:p>/g, "\n");
+    const text = withBreaks.replace(/<[^>]+>/g, "");
+    parts.push(text);
+  }
+  return parts.join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function analyzeDocument(token: string, doc: any, userCaption: string, sysPrompt: string): Promise<string> {
+  const name: string = doc.file_name ?? "file";
+  const mime: string = doc.mime_type ?? "";
+  const url = await tgGetFileUrl(token, doc.file_id);
+  const resp = await fetch(url);
+  const arr = await resp.arrayBuffer();
+  const buf = Buffer.from(arr);
+  const lower = name.toLowerCase();
+  const ask = userCaption?.trim() || `حلل هذا الملف "${name}" بالتفصيل: شنو يسوي، نقاط القوة، الأخطاء أو الثغرات، اقتراحات تحسين، وملخص نهائي.`;
+
+  // PDF → multimodal file input
+  if (mime === "application/pdf" || lower.endsWith(".pdf")) {
+    const dataUrl = `data:application/pdf;base64,${buf.toString("base64")}`;
+    return await aiChat([
+      { role: "system", content: sysPrompt },
+      { role: "user", content: [
+        { type: "text", text: ask },
+        { type: "file", file: { filename: name, file_data: dataUrl } },
+      ]},
+    ]);
+  }
+
+  // DOCX → unzip + extract text
+  if (lower.endsWith(".docx") || mime.includes("officedocument.wordprocessingml")) {
+    let text = "";
+    try { text = extractDocxText(buf); } catch (e: any) { throw new Error("فشل قراءة DOCX: " + (e?.message ?? e)); }
+    if (!text) text = "(الملف فارغ أو ما كدرت أستخرج نص منه)";
+    const truncated = text.slice(0, 80000);
+    return await aiChat([
+      { role: "system", content: sysPrompt },
+      { role: "user", content: `محتوى مستند Word "${name}":\n\n${truncated}\n\n${ask}` },
+    ]);
+  }
+
+  // TXT / code / json / md / csv / xml / yml ... → read as utf8 text
+  const ext = lower.split(".").pop() ?? "";
+  const textExts = ["txt","md","markdown","json","csv","xml","yml","yaml","log","ini","env","py","js","ts","tsx","jsx","html","css","sh","sql","go","rs","cpp","c","h","hpp","java","kt","rb","php","swift","dart","lua","r","toml"];
+  if (textExts.includes(ext) || mime.startsWith("text/")) {
+    const text = buf.toString("utf8").slice(0, 80000);
+    return await aiChat([
+      { role: "system", content: sysPrompt },
+      { role: "user", content: `محتوى الملف "${name}" (${ext || mime}):\n\n\`\`\`\n${text}\n\`\`\`\n\n${ask}` },
+    ]);
+  }
+
+  throw new Error(`صيغة "${ext || mime}" غير مدعومة للتحليل النصي. الصيغ المدعومة: PDF, DOCX, TXT, وكل ملفات الكود.`);
+}
+
+
 
 // ============ Main update handler ============
 async function handleUpdate(update: any, token: string) {
