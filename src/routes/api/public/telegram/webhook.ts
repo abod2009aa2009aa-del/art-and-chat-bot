@@ -530,26 +530,20 @@ async function handleUpdate(update: any, token: string) {
     const userIsAdmin = isGroup ? await isAdmin(token, chatId, userId) : false;
     const typingId = await startTyping(token, chatId, msg.message_id);
     try {
-      // Build context: group mem (current chat) OR dm mem
-      // In DM, ALSO include summary of user's group memory (read-only recall)
+      // Build context from persistent DB memory (per chat)
       const history: any[] = [];
-      const dmHist = dmMem.get(userId) ?? [];
-      const grpHist = isGroup ? (groupMem.get(chatId) ?? []) : [];
-      const baseHist = isGroup ? grpHist : dmHist;
-      // Take last 30 for the model (token budget)
-      for (const m of baseHist.slice(-120)) {
+      const baseHist = await loadHistory(chatId, HISTORY_LIMIT);
+      for (const m of baseHist) {
         history.push({ role: m.role, content: m.role === "user" ? `${m.name ?? ""}: ${m.content}` : m.content });
       }
 
       let extraContext = "";
-      if (!isGroup) {
-        // Add a short recall of recent group messages user participated in
-        const groups = Array.from(userGroups.get(userId) ?? []);
-        const snippets: string[] = [];
-        for (const gid of groups.slice(-3)) {
-          const last = (groupMem.get(gid) ?? []).slice(-10).map(m => `- ${m.name ?? ""}: ${m.content}`).join("\n");
-          if (last) snippets.push(`من مجموعة ${gid}:\n${last}`);
-        }
+      if (!isGroup && userId) {
+        const cross = await loadUserRecentAcrossGroups(userId, 12);
+        const snippets = cross.map(c => {
+          const block = c.msgs.map(m => `- ${m.name ?? ""}: ${m.content}`).join("\n");
+          return `من مجموعة ${c.chatId}:\n${block}`;
+        });
         if (snippets.length) extraContext = `\n\nسياق من مجموعاتك الأخيرة:\n${snippets.join("\n\n")}`;
       }
 
@@ -594,12 +588,11 @@ async function handleUpdate(update: any, token: string) {
           chat_id: chatId, text: final, reply_to_message_id: isGroup ? msg.message_id : undefined,
         });
       }
-      // Save assistant turn
-      const am: Msg = { role: "assistant", content: final, ts: Date.now() };
-      if (isGroup) pushMem(groupMem, chatId, am, GROUP_MEM_CAP);
-      else pushMem(dmMem, userId, am, DM_MEM_CAP);
+      // Save assistant turn to persistent memory
+      await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: final });
       // Track our message id so we can react to user replies to it
       if (sent.ok) lastBotMsgIds.add(`${chatId}:${sent.result.message_id}`);
+
 
     } catch (e: any) {
       await stopTyping(token, chatId, typingId);
