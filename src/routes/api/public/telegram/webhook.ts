@@ -8,27 +8,72 @@ const GATEWAY = "https://ai.gateway.lovable.dev/v1";
 const DEVELOPER_ID = 6475190017;
 const BOT_NAME = "أليسا";
 
-// ============ Memory (in-memory, per-worker) ============
-// Group memory: last 200 msgs per chat. DM: last 500 msgs per user.
-// (Cloudflare workers reset; for true persistence enable Cloud DB.)
-const GROUP_MEM_CAP = 2000;
-const DM_MEM_CAP = 5000;
-
+// ============ Persistent Memory (Lovable Cloud DB) ============
+// Conversation history is stored in `telegram_messages` table — never lost.
+const HISTORY_LIMIT = 200; // last N messages loaded per context for AI
 
 type Msg = { role: "user" | "assistant"; name?: string; content: string; ts: number };
-const groupMem = new Map<number, Msg[]>(); // chat_id -> msgs
-const dmMem = new Map<number, Msg[]>();    // user_id -> msgs
+
 // Track group context the user has been part of so DM can recall it
 const userGroups = new Map<number, Set<number>>();
 // Cache bot info
 let botInfo: { id: number; username: string } | null = null;
 
-function pushMem(map: Map<number, Msg[]>, key: number, msg: Msg, cap: number) {
-  const arr = map.get(key) ?? [];
-  arr.push(msg);
-  if (arr.length > cap) arr.splice(0, arr.length - cap);
-  map.set(key, arr);
+async function db() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
 }
+
+async function saveMsg(opts: { chatId: number; chatType: string; userId: number | null; userName: string | null; role: "user" | "assistant"; content: string; }) {
+  try {
+    const sb = await db();
+    await sb.from("telegram_messages").insert({
+      chat_id: opts.chatId, chat_type: opts.chatType,
+      user_id: opts.userId, user_name: opts.userName,
+      role: opts.role, content: opts.content,
+    });
+  } catch (e) { console.error("[mem] save failed", e); }
+}
+
+async function loadHistory(chatId: number, limit = HISTORY_LIMIT): Promise<Msg[]> {
+  try {
+    const sb = await db();
+    const { data, error } = await sb
+      .from("telegram_messages")
+      .select("role,user_name,content,created_at")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) { console.error("[mem] load error", error); return []; }
+    return (data ?? []).reverse().map((r: any) => ({
+      role: r.role, name: r.user_name ?? undefined, content: r.content, ts: new Date(r.created_at).getTime(),
+    }));
+  } catch (e) { console.error("[mem] load failed", e); return []; }
+}
+
+async function loadUserRecentAcrossGroups(userId: number, perGroup = 15): Promise<Array<{ chatId: number; msgs: Msg[] }>> {
+  try {
+    const sb = await db();
+    // grab distinct chat_ids the user posted in recently
+    const { data: chats } = await sb
+      .from("telegram_messages")
+      .select("chat_id")
+      .eq("user_id", userId)
+      .neq("chat_type", "private")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    const seen = new Set<number>();
+    const ids: number[] = [];
+    for (const r of (chats ?? []) as any[]) if (!seen.has(r.chat_id)) { seen.add(r.chat_id); ids.push(r.chat_id); }
+    const out: Array<{ chatId: number; msgs: Msg[] }> = [];
+    for (const cid of ids.slice(0, 3)) {
+      const msgs = await loadHistory(cid, perGroup);
+      if (msgs.length) out.push({ chatId: cid, msgs });
+    }
+    return out;
+  } catch (e) { console.error("[mem] cross-group failed", e); return []; }
+}
+
 
 // ============ Helpers ============
 function deriveSecret(token: string) {
@@ -305,12 +350,11 @@ async function handleUpdate(update: any, token: string) {
     set.add(chatId); userGroups.set(userId, set);
   }
 
-  // Save inbound to memory (only text)
+  // Save inbound to memory (only text) — persists to DB
   if (text && !text.startsWith("/")) {
-    const m: Msg = { role: "user", name: userName, content: text, ts: Date.now() };
-    if (isGroup) pushMem(groupMem, chatId, m, GROUP_MEM_CAP);
-    else pushMem(dmMem, userId, m, DM_MEM_CAP);
+    await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: text });
   }
+
 
   // ===== Group moderation (skip dev) =====
   if (isGroup && !isDev && text) {
@@ -486,26 +530,20 @@ async function handleUpdate(update: any, token: string) {
     const userIsAdmin = isGroup ? await isAdmin(token, chatId, userId) : false;
     const typingId = await startTyping(token, chatId, msg.message_id);
     try {
-      // Build context: group mem (current chat) OR dm mem
-      // In DM, ALSO include summary of user's group memory (read-only recall)
+      // Build context from persistent DB memory (per chat)
       const history: any[] = [];
-      const dmHist = dmMem.get(userId) ?? [];
-      const grpHist = isGroup ? (groupMem.get(chatId) ?? []) : [];
-      const baseHist = isGroup ? grpHist : dmHist;
-      // Take last 30 for the model (token budget)
-      for (const m of baseHist.slice(-120)) {
+      const baseHist = await loadHistory(chatId, HISTORY_LIMIT);
+      for (const m of baseHist) {
         history.push({ role: m.role, content: m.role === "user" ? `${m.name ?? ""}: ${m.content}` : m.content });
       }
 
       let extraContext = "";
-      if (!isGroup) {
-        // Add a short recall of recent group messages user participated in
-        const groups = Array.from(userGroups.get(userId) ?? []);
-        const snippets: string[] = [];
-        for (const gid of groups.slice(-3)) {
-          const last = (groupMem.get(gid) ?? []).slice(-10).map(m => `- ${m.name ?? ""}: ${m.content}`).join("\n");
-          if (last) snippets.push(`من مجموعة ${gid}:\n${last}`);
-        }
+      if (!isGroup && userId) {
+        const cross = await loadUserRecentAcrossGroups(userId, 12);
+        const snippets = cross.map(c => {
+          const block = c.msgs.map(m => `- ${m.name ?? ""}: ${m.content}`).join("\n");
+          return `من مجموعة ${c.chatId}:\n${block}`;
+        });
         if (snippets.length) extraContext = `\n\nسياق من مجموعاتك الأخيرة:\n${snippets.join("\n\n")}`;
       }
 
@@ -550,12 +588,11 @@ async function handleUpdate(update: any, token: string) {
           chat_id: chatId, text: final, reply_to_message_id: isGroup ? msg.message_id : undefined,
         });
       }
-      // Save assistant turn
-      const am: Msg = { role: "assistant", content: final, ts: Date.now() };
-      if (isGroup) pushMem(groupMem, chatId, am, GROUP_MEM_CAP);
-      else pushMem(dmMem, userId, am, DM_MEM_CAP);
+      // Save assistant turn to persistent memory
+      await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: final });
       // Track our message id so we can react to user replies to it
       if (sent.ok) lastBotMsgIds.add(`${chatId}:${sent.result.message_id}`);
+
 
     } catch (e: any) {
       await stopTyping(token, chatId, typingId);
