@@ -8,27 +8,72 @@ const GATEWAY = "https://ai.gateway.lovable.dev/v1";
 const DEVELOPER_ID = 6475190017;
 const BOT_NAME = "أليسا";
 
-// ============ Memory (in-memory, per-worker) ============
-// Group memory: last 200 msgs per chat. DM: last 500 msgs per user.
-// (Cloudflare workers reset; for true persistence enable Cloud DB.)
-const GROUP_MEM_CAP = 2000;
-const DM_MEM_CAP = 5000;
-
+// ============ Persistent Memory (Lovable Cloud DB) ============
+// Conversation history is stored in `telegram_messages` table — never lost.
+const HISTORY_LIMIT = 200; // last N messages loaded per context for AI
 
 type Msg = { role: "user" | "assistant"; name?: string; content: string; ts: number };
-const groupMem = new Map<number, Msg[]>(); // chat_id -> msgs
-const dmMem = new Map<number, Msg[]>();    // user_id -> msgs
+
 // Track group context the user has been part of so DM can recall it
 const userGroups = new Map<number, Set<number>>();
 // Cache bot info
 let botInfo: { id: number; username: string } | null = null;
 
-function pushMem(map: Map<number, Msg[]>, key: number, msg: Msg, cap: number) {
-  const arr = map.get(key) ?? [];
-  arr.push(msg);
-  if (arr.length > cap) arr.splice(0, arr.length - cap);
-  map.set(key, arr);
+async function db() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
 }
+
+async function saveMsg(opts: { chatId: number; chatType: string; userId: number | null; userName: string | null; role: "user" | "assistant"; content: string; }) {
+  try {
+    const sb = await db();
+    await sb.from("telegram_messages").insert({
+      chat_id: opts.chatId, chat_type: opts.chatType,
+      user_id: opts.userId, user_name: opts.userName,
+      role: opts.role, content: opts.content,
+    });
+  } catch (e) { console.error("[mem] save failed", e); }
+}
+
+async function loadHistory(chatId: number, limit = HISTORY_LIMIT): Promise<Msg[]> {
+  try {
+    const sb = await db();
+    const { data, error } = await sb
+      .from("telegram_messages")
+      .select("role,user_name,content,created_at")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) { console.error("[mem] load error", error); return []; }
+    return (data ?? []).reverse().map((r: any) => ({
+      role: r.role, name: r.user_name ?? undefined, content: r.content, ts: new Date(r.created_at).getTime(),
+    }));
+  } catch (e) { console.error("[mem] load failed", e); return []; }
+}
+
+async function loadUserRecentAcrossGroups(userId: number, perGroup = 15): Promise<Array<{ chatId: number; msgs: Msg[] }>> {
+  try {
+    const sb = await db();
+    // grab distinct chat_ids the user posted in recently
+    const { data: chats } = await sb
+      .from("telegram_messages")
+      .select("chat_id")
+      .eq("user_id", userId)
+      .neq("chat_type", "private")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    const seen = new Set<number>();
+    const ids: number[] = [];
+    for (const r of (chats ?? []) as any[]) if (!seen.has(r.chat_id)) { seen.add(r.chat_id); ids.push(r.chat_id); }
+    const out: Array<{ chatId: number; msgs: Msg[] }> = [];
+    for (const cid of ids.slice(0, 3)) {
+      const msgs = await loadHistory(cid, perGroup);
+      if (msgs.length) out.push({ chatId: cid, msgs });
+    }
+    return out;
+  } catch (e) { console.error("[mem] cross-group failed", e); return []; }
+}
+
 
 // ============ Helpers ============
 function deriveSecret(token: string) {
