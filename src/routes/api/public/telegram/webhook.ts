@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createHash, timingSafeEqual } from "crypto";
+import { unzipSync, strFromU8 } from "fflate";
+
+
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
 const DEVELOPER_ID = 6475190017;
