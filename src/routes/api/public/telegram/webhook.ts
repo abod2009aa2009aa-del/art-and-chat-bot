@@ -493,7 +493,7 @@ async function handleUpdate(update: any, token: string) {
       const grpHist = isGroup ? (groupMem.get(chatId) ?? []) : [];
       const baseHist = isGroup ? grpHist : dmHist;
       // Take last 30 for the model (token budget)
-      for (const m of baseHist.slice(-30)) {
+      for (const m of baseHist.slice(-120)) {
         history.push({ role: m.role, content: m.role === "user" ? `${m.name ?? ""}: ${m.content}` : m.content });
       }
 
