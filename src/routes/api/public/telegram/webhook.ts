@@ -466,7 +466,10 @@ async function handleUpdate(update: any, token: string) {
     if (!text) return;
     const isMention = bot?.username && new RegExp(`@${bot.username}\\b`, "i").test(text);
     const isReplyToBot = msg.reply_to_message?.from?.id === bot?.id;
-    const isNameCall = new RegExp(`\\b${BOT_NAME}\\b`).test(text);
+    // الاسم لازم يجي مع كلام إضافي (مو بس "اليسا" لحالها)
+    const nameRe = new RegExp(`${BOT_NAME}`);
+    const isNameCall = nameRe.test(text) && text.replace(nameRe, "").trim().length >= 2;
+
     if (isGroup && !isMention && !isReplyToBot && !isNameCall && !isDev) {
       // Stay silent in groups unless addressed — but occasional mood-based reaction
       if (Math.random() < 0.05) {
