@@ -464,6 +464,8 @@ async function handleUpdate(update: any, token: string) {
         await stopTyping(token, chatId, typingId);
         const final = (reply || "ما كدرت أحلل الملف 😅").slice(0, 4000);
         await tg(token, "sendMessage", { chat_id: chatId, text: final, reply_to_message_id: msg.message_id });
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[أرسل ملف "${msg.document?.file_name ?? "file"}"] ${text || ""}`.trim() });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حللت الملف "${msg.document?.file_name ?? "file"}"] ${final}`.slice(0, 8000) });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بتحليل الملف:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
