@@ -511,6 +511,8 @@ async function handleUpdate(update: any, token: string) {
         form.append("photo", new Blob([new Uint8Array(png)], { type: "image/png" }), "image.png");
         const res = await tgForm(token, "sendPhoto", form);
         if (!res.ok) throw new Error(JSON.stringify(res));
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب إنشاء صورة] ${prompt}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[أنشأت صورة وأرسلتها] الوصف: ${prompt}` });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: `ما كدرت أنشئ الصورة 😅\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
