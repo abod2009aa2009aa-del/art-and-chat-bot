@@ -389,6 +389,8 @@ async function handleUpdate(update: any, token: string) {
         ]);
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: reply || "ما كدرت أحلل 😅", reply_to_message_id: msg.message_id });
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[أرسل صورة] ${text || ""}`.trim() });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حللت صورة المستخدم] ${reply ?? ""}`.slice(0, 8000) });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بتحليل الصورة:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
@@ -444,6 +446,8 @@ async function handleUpdate(update: any, token: string) {
         if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
         form.append("document", new Blob([clean], { type: mimeFor(outName) }), outName);
         await tgForm(token, "sendDocument", form);
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب تعديل ملف "${name}"] ${instructions}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[عدّلت الملف وأرسلته باسم "${outName}"]. ملخص التعديل: ${instructions.slice(0,500)}` });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بالتعديل:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
@@ -460,6 +464,8 @@ async function handleUpdate(update: any, token: string) {
         await stopTyping(token, chatId, typingId);
         const final = (reply || "ما كدرت أحلل الملف 😅").slice(0, 4000);
         await tg(token, "sendMessage", { chat_id: chatId, text: final, reply_to_message_id: msg.message_id });
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[أرسل ملف "${msg.document?.file_name ?? "file"}"] ${text || ""}`.trim() });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حللت الملف "${msg.document?.file_name ?? "file"}"] ${final}`.slice(0, 8000) });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بتحليل الملف:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
@@ -505,6 +511,8 @@ async function handleUpdate(update: any, token: string) {
         form.append("photo", new Blob([new Uint8Array(png)], { type: "image/png" }), "image.png");
         const res = await tgForm(token, "sendPhoto", form);
         if (!res.ok) throw new Error(JSON.stringify(res));
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب إنشاء صورة] ${prompt}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[أنشأت صورة وأرسلتها] الوصف: ${prompt}` });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: `ما كدرت أنشئ الصورة 😅\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
@@ -533,6 +541,8 @@ async function handleUpdate(update: any, token: string) {
         if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
         form.append("document", new Blob([clean], { type: mime }), name);
         await tgForm(token, "sendDocument", form);
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب إنشاء ملف "${name}"] ${desc}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[أنشأت ملف "${name}" وأرسلته]. وصف المحتوى: ${desc.slice(0,500)}` });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
