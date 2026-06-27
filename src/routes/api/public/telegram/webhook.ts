@@ -439,6 +439,32 @@ function applyOfflineEdit(original: string, instructions: string, name: string) 
   return edited;
 }
 
+function offlineChatReply(text: string, isGroup: boolean, userName: string) {
+  const clean = redactSecrets(text).trim();
+  if (/^(هلا|سلام|شلونك|مرحبا|هاي)\b/i.test(clean)) return `هلا ${userName} 😂 موجودة وياك، بس وضع الذكاء العميق متوقف حالياً بسبب الرصيد.`;
+  if (/قوانين|ممنوع|rules/i.test(clean)) return "قوانين المجموعة: ممنوع روابط، ترويج، تبادل، سب، أو طلب خاص للتبادل. المخالف ينحذف كلامه وقد ينكتم/ينطرد.";
+  if (/ملف|كود|سكربت|برمج|python|javascript|html|css/i.test(clean)) return "دز الأمر بصيغة /file script.py وصف السكربت، وإذا الرصيد متوقف أسوي لك قالب برمجي محلي بدل ما أصمت.";
+  if (/صورة|img|image/i.test(clean)) return "إنشاء الصور الحقيقي يحتاج رصيد AI، بس أقدر أحفظ طلبك بالذاكرة وأرجع أوصفه أو أرسل بطاقة SVG مؤقتة.";
+  return isGroup
+    ? "سمعتك 😂 حالياً وضع الرد المحلي شغال لأن رصيد AI خلص، أكتب طلب واضح أو استخدم /file أو دز ملف أحلله محلياً."
+    : `تمام ${userName}، آني موجودة. حالياً أجاوب محلياً لأن رصيد AI خلص، بس الذاكرة والتحليل النصي والملفات البسيطة تشتغل.`;
+}
+
+function makeOfflineSvg(prompt: string) {
+  const safe = redactSecrets(prompt).replace(/[<&>]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c] ?? c)).slice(0, 220);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="#0f766e"/></linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#g)"/>
+  <circle cx="800" cy="180" r="110" fill="#facc15" opacity="0.85"/>
+  <path d="M0 720 C220 620 330 850 520 730 C700 620 830 690 1024 610 L1024 1024 L0 1024 Z" fill="#22c55e" opacity="0.75"/>
+  <text x="72" y="120" fill="#ffffff" font-family="Arial, sans-serif" font-size="42" font-weight="700">أليسا - وضع محلي</text>
+  <foreignObject x="72" y="180" width="880" height="420"><div xmlns="http://www.w3.org/1999/xhtml" style="color:white;font:36px Arial;line-height:1.35;direction:rtl">${safe || "صورة مؤقتة"}</div></foreignObject>
+  <text x="72" y="930" fill="#d1fae5" font-family="Arial, sans-serif" font-size="28">الصورة التوليدية الحقيقية تحتاج رصيد AI</text>
+</svg>`;
+}
+
 function extractDocxText(buf: Buffer): string {
   const files = unzipSync(new Uint8Array(buf));
   const parts: string[] = [];
@@ -467,13 +493,19 @@ async function analyzeDocument(token: string, doc: any, userCaption: string, sys
   // PDF → multimodal file input
   if (mime === "application/pdf" || lower.endsWith(".pdf")) {
     const dataUrl = `data:application/pdf;base64,${buf.toString("base64")}`;
-    return await aiChat([
-      { role: "system", content: sysPrompt },
-      { role: "user", content: [
-        { type: "text", text: ask },
-        { type: "file", file: { filename: name, file_data: dataUrl } },
-      ]},
-    ]);
+    try {
+      return await aiChat([
+        { role: "system", content: sysPrompt },
+        { role: "user", content: [
+          { type: "text", text: ask },
+          { type: "file", file: { filename: name, file_data: dataUrl } },
+        ]},
+      ]);
+    } catch (e) {
+      if (!isAiUnavailableError(e)) throw e;
+      const loose = extractPdfLooseText(buf);
+      return offlineStructuredSummary(name, "pdf", loose, ask, "رصيد AI متوقف؛ هذا تحليل محلي مستخرج من نص PDF المتاح فقط.");
+    }
   }
 
   // DOCX → unzip + extract text
@@ -482,21 +514,31 @@ async function analyzeDocument(token: string, doc: any, userCaption: string, sys
     try { text = extractDocxText(buf); } catch (e: any) { throw new Error("فشل قراءة DOCX: " + (e?.message ?? e)); }
     if (!text) text = "(الملف فارغ أو ما كدرت أستخرج نص منه)";
     const truncated = text.slice(0, 80000);
-    return await aiChat([
-      { role: "system", content: sysPrompt },
-      { role: "user", content: `محتوى مستند Word "${name}":\n\n${truncated}\n\n${ask}` },
-    ]);
+    try {
+      return await aiChat([
+        { role: "system", content: sysPrompt },
+        { role: "user", content: `محتوى مستند Word "${name}":\n\n${truncated}\n\n${ask}` },
+      ]);
+    } catch (e) {
+      if (!isAiUnavailableError(e)) throw e;
+      return offlineStructuredSummary(name, "docx", truncated, ask, "رصيد AI متوقف؛ هذا تحليل محلي بدون نموذج ذكاء.");
+    }
   }
 
   // TXT / code / json / md / csv / xml / yml ... → read as utf8 text
   const ext = lower.split(".").pop() ?? "";
   const textExts = ["txt","md","markdown","json","csv","xml","yml","yaml","log","ini","env","py","js","ts","tsx","jsx","html","css","sh","sql","go","rs","cpp","c","h","hpp","java","kt","rb","php","swift","dart","lua","r","toml"];
   if (textExts.includes(ext) || mime.startsWith("text/")) {
-    const text = buf.toString("utf8").slice(0, 80000);
-    return await aiChat([
-      { role: "system", content: sysPrompt },
-      { role: "user", content: `محتوى الملف "${name}" (${ext || mime}):\n\n\`\`\`\n${text}\n\`\`\`\n\n${ask}` },
-    ]);
+    const text = redactSecrets(buf.toString("utf8")).slice(0, 80000);
+    try {
+      return await aiChat([
+        { role: "system", content: sysPrompt },
+        { role: "user", content: `محتوى الملف "${name}" (${ext || mime}):\n\n\`\`\`\n${text}\n\`\`\`\n\n${ask}` },
+      ]);
+    } catch (e) {
+      if (!isAiUnavailableError(e)) throw e;
+      return offlineStructuredSummary(name, ext || mime, text, ask, "رصيد AI متوقف؛ هذا تحليل محلي للملف حتى ما أبقى صامتة.");
+    }
   }
 
   throw new Error(`صيغة "${ext || mime}" غير مدعومة للتحليل النصي. الصيغ المدعومة: PDF, DOCX, TXT, وكل ملفات الكود.`);
