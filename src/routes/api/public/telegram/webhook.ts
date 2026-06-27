@@ -446,6 +446,8 @@ async function handleUpdate(update: any, token: string) {
         if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
         form.append("document", new Blob([clean], { type: mimeFor(outName) }), outName);
         await tgForm(token, "sendDocument", form);
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب تعديل ملف "${name}"] ${instructions}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[عدّلت الملف وأرسلته باسم "${outName}"]. ملخص التعديل: ${instructions.slice(0,500)}` });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بالتعديل:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
