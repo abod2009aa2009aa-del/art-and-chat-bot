@@ -396,6 +396,61 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
+    // ===== Document edit (/تعديل أو /edit مع ملف نصي/كود) =====
+    const isEditCmd = /^\/(تعديل|edit)\b/i.test(text);
+    if (msg.document && isEditCmd) {
+      const typingId = await startTyping(token, chatId, msg.message_id);
+      try {
+        const instructions = text.replace(/^\/(تعديل|edit)\s*/i, "").trim();
+        if (!instructions) throw new Error("اكتب تفاصيل التعديل بعد الأمر. مثال:\n/تعديل غيّر اسم الدالة وأضف معالجة أخطاء");
+        const doc = msg.document;
+        const name: string = doc.file_name ?? "file.txt";
+        const lower = name.toLowerCase();
+        const ext = lower.split(".").pop() ?? "";
+        const textExts = ["txt","md","markdown","json","csv","xml","yml","yaml","log","ini","env","py","js","ts","tsx","jsx","html","css","sh","sql","go","rs","cpp","c","h","hpp","java","kt","rb","php","swift","dart","lua","r","toml"];
+        const mimeIn: string = doc.mime_type ?? "";
+        const isTexty = textExts.includes(ext) || mimeIn.startsWith("text/") || lower.endsWith(".docx");
+        if (!isTexty) throw new Error(`صيغة "${ext || mimeIn}" غير مدعومة للتعديل. المدعوم: نصوص، كود، DOCX.`);
+
+        const url = await tgGetFileUrl(token, doc.file_id);
+        const resp = await fetch(url);
+        const buf = Buffer.from(await resp.arrayBuffer());
+        let original = "";
+        let outName = name;
+        if (lower.endsWith(".docx")) {
+          original = extractDocxText(buf);
+          // نرجع نص بصيغة .txt لأن إعادة بناء DOCX معقدة
+          outName = name.replace(/\.docx$/i, ".edited.txt");
+        } else {
+          original = buf.toString("utf8");
+          const dot = name.lastIndexOf(".");
+          outName = dot > 0 ? `${name.slice(0, dot)}.edited${name.slice(dot)}` : `${name}.edited`;
+        }
+        const truncated = original.slice(0, 80000);
+
+        const edited = await aiChat([
+          { role: "system", content: `أنت Senior Engineer. مهمتك تعديل ملف "${name}" حسب طلب المستخدم بدقة.
+أرجع المحتوى النهائي للملف كامل بعد التعديل فقط، بدون أي شرح، بدون أسوار ماركداون (\`\`\`)، بدون أي نص خارج المحتوى. حافظ على البنية والصياغة الأصلية واغيّر فقط ما طُلب.` },
+          { role: "user", content: `محتوى الملف الأصلي "${name}":\n\n${truncated}\n\nالتعديل المطلوب:\n${instructions}\n\nأرجع الملف الكامل بعد التعديل فقط.` },
+        ]);
+        let clean = (edited ?? "").trim();
+        clean = clean.replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+        if (!clean) throw new Error("ما كدرت أولد محتوى معدّل.");
+
+        await stopTyping(token, chatId, typingId);
+        const form = new FormData();
+        form.append("chat_id", String(chatId));
+        form.append("caption", `✏️ تم التعديل: ${outName}`);
+        if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+        form.append("document", new Blob([clean], { type: mimeFor(outName) }), outName);
+        await tgForm(token, "sendDocument", form);
+      } catch (e: any) {
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بالتعديل:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+      }
+      return;
+    }
+
     // ===== Document analysis (PDF / DOCX / TXT / code) =====
     if (msg.document && !text.startsWith("/")) {
       const typingId = await startTyping(token, chatId, msg.message_id);
