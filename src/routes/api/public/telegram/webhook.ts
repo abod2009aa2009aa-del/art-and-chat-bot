@@ -389,6 +389,8 @@ async function handleUpdate(update: any, token: string) {
         ]);
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: reply || "ما كدرت أحلل 😅", reply_to_message_id: msg.message_id });
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[أرسل صورة] ${text || ""}`.trim() });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حللت صورة المستخدم] ${reply ?? ""}`.slice(0, 8000) });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بتحليل الصورة:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
