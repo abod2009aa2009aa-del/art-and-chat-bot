@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createHash, timingSafeEqual } from "crypto";
+import { inflateSync } from "zlib";
 import { unzipSync, strFromU8 } from "fflate";
 
 
@@ -125,16 +126,42 @@ async function stopTyping(token: string, chatId: number, mid: number | null) {
 }
 
 // ============ AI Gateway ============
-async function aiChat(messages: any[], model = "google/gemini-2.5-flash") {
+const CHEAP_CHAT_MODELS = ["google/gemini-2.5-flash-lite", "google/gemini-3.1-flash-lite", "google/gemini-2.5-flash"];
+
+function isAiUnavailableError(error: unknown) {
+  const msg = String((error as any)?.message ?? error ?? "");
+  return /AI\s*402|not enough credits|insufficient credits|credit|quota/i.test(msg);
+}
+
+function friendlyAiError(error: unknown) {
+  if (isAiUnavailableError(error)) {
+    return "رصيد الذكاء خلص حالياً، شغّلت لك الوضع المحلي بدون AI حتى البوت ما يصمت.";
+  }
+  return String((error as any)?.message ?? error ?? "خطأ غير معروف").slice(0, 700);
+}
+
+async function aiChat(messages: any[], model?: string) {
   const key = process.env.LOVABLE_API_KEY!;
-  const r = await fetch(`${GATEWAY}/chat/completions`, {
-    method: "POST",
-    headers: { "Lovable-API-Key": key, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages }),
-  });
-  if (!r.ok) throw new Error(`AI ${r.status}: ${await r.text()}`);
-  const data = await r.json();
-  return (data.choices?.[0]?.message?.content ?? "") as string;
+  const models = model ? [model] : CHEAP_CHAT_MODELS;
+  let lastErr = "";
+  for (const currentModel of models) {
+    const r = await fetch(`${GATEWAY}/chat/completions`, {
+      method: "POST",
+      headers: { "Lovable-API-Key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: currentModel, messages }),
+    });
+    const txt = await r.text();
+    if (!r.ok) {
+      lastErr = `AI ${r.status}: ${txt}`;
+      console.error("[ai-chat]", currentModel, lastErr.slice(0, 500));
+      // 402 is workspace-billing, not model-specific; retrying other models only wastes requests.
+      if (r.status === 402) throw new Error(lastErr);
+      continue;
+    }
+    const data = JSON.parse(txt);
+    return (data.choices?.[0]?.message?.content ?? "") as string;
+  }
+  throw new Error(lastErr || "AI request failed");
 }
 
 async function aiImage(prompt: string): Promise<Buffer> {
@@ -142,8 +169,8 @@ async function aiImage(prompt: string): Promise<Buffer> {
   // Try models in order; surface real errors
   const attempts: Array<{ model: string; body: any }> = [
     { model: "google/gemini-2.5-flash-image", body: { model: "google/gemini-2.5-flash-image", messages: [{ role: "user", content: prompt }], modalities: ["image", "text"] } },
-    { model: "openai/gpt-image-1-mini", body: { model: "openai/gpt-image-1-mini", prompt, size: "1024x1024", quality: "low", n: 1 } },
-    { model: "openai/gpt-image-2", body: { model: "openai/gpt-image-2", prompt, size: "1024x1024", quality: "low", n: 1 } },
+    { model: "google/gemini-3.1-flash-image", body: { model: "google/gemini-3.1-flash-image", prompt, size: "1024x1024", n: 1 } },
+    { model: "google/gemini-3-pro-image", body: { model: "google/gemini-3-pro-image", prompt, size: "1024x1024", n: 1 } },
   ];
   let lastErr = "";
   for (const a of attempts) {
@@ -154,7 +181,12 @@ async function aiImage(prompt: string): Promise<Buffer> {
         body: JSON.stringify(a.body),
       });
       const txt = await r.text();
-      if (!r.ok) { lastErr = `[${a.model}] ${r.status}: ${txt.slice(0, 300)}`; console.error("[img]", lastErr); continue; }
+      if (!r.ok) {
+        lastErr = `[${a.model}] ${r.status}: ${txt.slice(0, 300)}`;
+        console.error("[img]", lastErr);
+        if (r.status === 402) throw new Error(lastErr);
+        continue;
+      }
       const data = JSON.parse(txt);
       const b64 = data.data?.[0]?.b64_json;
       if (!b64) { lastErr = `[${a.model}] لا توجد بيانات صورة`; continue; }
@@ -257,6 +289,155 @@ function mimeFor(name: string): string {
 }
 
 // ============ Document text extraction (PDF / DOCX / TXT / code) ============
+function redactSecrets(input: string) {
+  return input
+    .replace(/\b\d{8,12}:[A-Za-z0-9_-]{20,}\b/g, "[telegram-token-hidden]")
+    .replace(/((?:TOKEN|KEY|SECRET|PASSWORD|PASS|API_KEY)[A-Z0-9_\-]*\s*[:=]\s*)["']?[^"'\s]+/gi, "$1[hidden]");
+}
+
+function decodePdfString(raw: string) {
+  return raw
+    .slice(1, -1)
+    .replace(/\\([nrtbf()\\])/g, (_, ch) => ({ n: "\n", r: "\r", t: "\t", b: "\b", f: "\f", "(": "(", ")": ")", "\\": "\\" }[ch] ?? ch))
+    .replace(/\\([0-7]{1,3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+    .replace(/[\u0000-\u001F]+/g, " ")
+    .trim();
+}
+
+function extractPdfLooseText(buf: Buffer): string {
+  const raw = buf.toString("latin1");
+  const out: string[] = [];
+  const scan = (chunk: string) => {
+    for (const m of chunk.matchAll(/\((?:\\.|[^\\)]){2,1000}\)/g)) {
+      const s = decodePdfString(m[0]);
+      if (/[A-Za-z\u0600-\u06FF]{3,}/.test(s) && !/^https?:/i.test(s)) out.push(s);
+      if (out.join("\n").length > 60000) break;
+    }
+  };
+  scan(raw.slice(0, 900000));
+  const streamRe = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let m: RegExpExecArray | null;
+  while ((m = streamRe.exec(raw)) !== null && out.join("\n").length < 60000) {
+    const before = raw.slice(Math.max(0, (m.index ?? 0) - 500), m.index);
+    if (!/FlateDecode/.test(before)) continue;
+    try {
+      scan(inflateSync(Buffer.from(m[1], "latin1")).toString("latin1"));
+    } catch { /* many PDF streams are not plain deflate; skip safely */ }
+  }
+  return redactSecrets([...new Set(out)].join("\n")).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function detectLang(name: string, kind = "") {
+  const ext = name.split(".").pop()?.toLowerCase() || kind.toLowerCase();
+  const map: Record<string, string> = {
+    py: "Python", js: "JavaScript", ts: "TypeScript", tsx: "React TSX", jsx: "React JSX", html: "HTML", css: "CSS",
+    json: "JSON", sh: "Bash", sql: "SQL", go: "Go", rs: "Rust", cpp: "C++", c: "C", java: "Java",
+    md: "Markdown", txt: "Text", pdf: "PDF", docx: "Word DOCX", csv: "CSV", xml: "XML", yml: "YAML", yaml: "YAML",
+  };
+  return map[ext] ?? (kind || "ملف نصي");
+}
+
+function codeSignals(text: string) {
+  const safe = redactSecrets(text);
+  const imports = [...new Set([
+    ...safe.matchAll(/^\s*(?:import|from)\s+([^\n;]+)/gm),
+    ...safe.matchAll(/^\s*(?:const|let|var)\s+\w+\s*=\s*require\(([^)]+)\)/gm),
+    ...safe.matchAll(/^\s*#include\s+[<"]([^>"]+)/gm),
+  ].map((m) => m[1].trim()).filter(Boolean))].slice(0, 12);
+  const funcs = [...new Set([
+    ...safe.matchAll(/^\s*(?:async\s+)?function\s+([\w$]+)/gm),
+    ...safe.matchAll(/^\s*(?:export\s+)?(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s*)?\(/gm),
+    ...safe.matchAll(/^\s*(?:def|class)\s+([\w_]+)/gm),
+    ...safe.matchAll(/^\s*(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\]]+\s+([\w_]+)\s*\(/gm),
+  ].map((m) => m[1].trim()).filter(Boolean))].slice(0, 18);
+  const warnings: string[] = [];
+  if (/\beval\s*\(/.test(safe)) warnings.push("استخدام eval خطر وقد يفتح تنفيذ كود غير موثوق.");
+  if (/\bexec\s*\(|shell\s*=\s*true/i.test(safe)) warnings.push("تنفيذ أوامر نظام يحتاج تحقق قوي من المدخلات.");
+  if (/innerHTML\s*=|document\.write\s*\(/.test(safe)) warnings.push("تعديل HTML مباشر قد يسبب XSS إذا دخل المستخدم غير منظّف.");
+  if (/TODO|FIXME|HACK/i.test(safe)) warnings.push("توجد TODO/FIXME تحتاج متابعة.");
+  if (/(TOKEN|SECRET|PASSWORD|API_KEY)\s*[:=]/i.test(safe)) warnings.push("يوجد احتمال أسرار/مفاتيح داخل الملف — لا تشاركها علناً.");
+  if (!/try\s*\{|catch\s*\(|except\s+|\.catch\s*\(/.test(safe) && safe.length > 1500) warnings.push("معالجة الأخطاء قليلة أو غير واضحة.");
+  return { imports, funcs, warnings };
+}
+
+function offlineStructuredSummary(name: string, kind: string, text: string, ask = "", note = "") {
+  const clean = redactSecrets(text || "").replace(/\u0000/g, "").trim();
+  const lines = clean ? clean.split(/\r?\n/) : [];
+  const nonEmpty = lines.filter((l) => l.trim()).length;
+  const words = clean ? (clean.match(/[\p{L}\p{N}_]+/gu) ?? []).length : 0;
+  const lang = detectLang(name, kind);
+  const { imports, funcs, warnings } = codeSignals(clean);
+  const preview = clean
+    .split(/(?<=[.!؟])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 25 && !/(TOKEN|SECRET|PASSWORD|API_KEY)/i.test(s))
+    .slice(0, 5)
+    .join("\n- ");
+  const parts = [
+    `📄 تحليل محلي للملف: ${name}`,
+    note ? `⚠️ ${note}` : "",
+    `\n**النوع:** ${lang}`,
+    `**الحجم التقريبي:** ${lines.length} سطر / ${nonEmpty} سطر فعلي / ${words} كلمة`,
+    ask ? `**طلبك:** ${ask.slice(0, 250)}` : "",
+    funcs.length ? `\n**الدوال/الكلاسات المهمة:**\n- ${funcs.join("\n- ")}` : "\n**الدوال/الكلاسات المهمة:** ما ظهرت بوضوح من الفحص المحلي.",
+    imports.length ? `\n**المكتبات/الاعتماديات:**\n- ${imports.join("\n- ")}` : "",
+    warnings.length ? `\n**ملاحظات وأخطاء محتملة:**\n- ${warnings.join("\n- ")}` : "\n**ملاحظات وأخطاء محتملة:** ماكو مشاكل واضحة من الفحص المحلي السريع.",
+    preview ? `\n**ملخص المحتوى:**\n- ${preview}` : "\n**ملخص المحتوى:** النص غير كافي أو مشفّر/ثنائي وما ينقرأ محلياً بالكامل.",
+    "\n**اقتراحات:** راجع المدخلات، معالجة الأخطاء، الأسرار، والصلاحيات قبل التشغيل.",
+  ].filter(Boolean);
+  return parts.join("\n").slice(0, 3900);
+}
+
+function commentBlock(name: string, text: string) {
+  const ext = name.split(".").pop()?.toLowerCase();
+  if (["html", "xml"].includes(ext || "")) return `<!-- ${text} -->`;
+  if (["css", "js", "ts", "tsx", "jsx", "java", "c", "cpp", "h", "hpp", "go", "rs", "swift", "kt"].includes(ext || "")) return `/* ${text} */`;
+  if (["py", "sh", "rb", "php", "yml", "yaml", "toml"].includes(ext || "")) return `# ${text}`;
+  return text;
+}
+
+function makeOfflineFile(name: string, desc: string) {
+  const ext = name.split(".").pop()?.toLowerCase();
+  const safeDesc = redactSecrets(desc).slice(0, 500);
+  if (ext === "py") return `#!/usr/bin/env python3\n\"\"\"\n${safeDesc}\n\"\"\"\n\nfrom __future__ import annotations\n\n\ndef main() -> None:\n    print("Ready: ${safeDesc.replace(/"/g, "'") || "script"}")\n\n\nif __name__ == "__main__":\n    main()\n`;
+  if (ext === "js") return `#!/usr/bin/env node\n\"use strict\";\n\n// ${safeDesc}\n\nfunction main() {\n  console.log("Ready: ${safeDesc.replace(/"/g, "'") || "script"}");\n}\n\nmain();\n`;
+  if (ext === "ts") return `// ${safeDesc}\n\nfunction main(): void {\n  console.log("Ready: ${safeDesc.replace(/"/g, "'") || "script"}");\n}\n\nmain();\n`;
+  if (ext === "html") return `<!doctype html>\n<html lang="ar" dir="rtl">\n<head>\n  <meta charset="utf-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1" />\n  <title>${safeDesc || "صفحة"}</title>\n</head>\n<body>\n  <main>\n    <h1>${safeDesc || "جاهز"}</h1>\n  </main>\n</body>\n</html>\n`;
+  if (ext === "css") return `/* ${safeDesc} */\n:root {\n  color-scheme: light dark;\n  font-family: system-ui, sans-serif;\n}\n\nbody {\n  margin: 0;\n  min-height: 100vh;\n}\n`;
+  if (ext === "sh") return `#!/usr/bin/env bash\nset -euo pipefail\n\n# ${safeDesc}\necho "Ready: ${safeDesc.replace(/"/g, "'") || "script"}"\n`;
+  if (ext === "json") return JSON.stringify({ description: safeDesc, generated_offline: true }, null, 2) + "\n";
+  return `${commentBlock(name, `Generated offline: ${safeDesc}`)}\n`;
+}
+
+function applyOfflineEdit(original: string, instructions: string, name: string) {
+  let edited = original;
+  let changed = false;
+  const replace = instructions.match(/(?:بدل|استبدل|غير|غيّر)\s+["'“”]?(.{1,120}?)["'“”]?\s+(?:ب|الى|إلى|لـ|ل)\s+["'“”]?(.{1,120})["'“”]?$/i);
+  if (replace) {
+    const from = replace[1].trim();
+    const to = replace[2].trim();
+    if (from && edited.includes(from)) {
+      edited = edited.split(from).join(to);
+      changed = true;
+    }
+  }
+  const del = instructions.match(/(?:احذف|حذف)\s+["'“”]?(.{1,120})["'“”]?$/i);
+  if (!changed && del) {
+    const needle = del[1].trim();
+    edited = edited.split(/\r?\n/).filter((line) => !line.includes(needle)).join("\n");
+    changed = edited !== original;
+  }
+  const addEnd = instructions.match(/(?:اضف|أضف)\s+(.{1,500})\s+(?:بالنهاية|نهاية|اخر|آخر)/i);
+  if (!changed && addEnd) {
+    edited = `${edited.replace(/\s*$/, "\n\n")}${commentBlock(name, addEnd[1].trim())}\n`;
+    changed = true;
+  }
+  if (!changed) {
+    edited = `${commentBlock(name, `تعديل مطلوب يحتاج AI لتطبيقه بدقة: ${redactSecrets(instructions).slice(0, 500)}`)}\n${edited}`;
+  }
+  return edited;
+}
+
 function extractDocxText(buf: Buffer): string {
   const files = unzipSync(new Uint8Array(buf));
   const parts: string[] = [];
