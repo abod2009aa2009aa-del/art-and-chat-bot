@@ -617,7 +617,10 @@ async function handleUpdate(update: any, token: string) {
         await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حللت صورة المستخدم] ${reply ?? ""}`.slice(0, 8000) });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بتحليل الصورة:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        const fallback = isAiUnavailableError(e)
+          ? "رصيد تحليل الصور بالذكاء خلص حالياً، لذلك ما أگدر أشوف تفاصيل الصورة بدقة هسه. الرسالة انحفظت بالذاكرة، جرّب تحليل ملف نصي/كود أو /ping للتأكد أن البوت شغال."
+          : `خطأ بتحليل الصورة:\n${e?.message ?? e}`;
+        await tg(token, "sendMessage", { chat_id: chatId, text: fallback, reply_to_message_id: msg.message_id });
       }
       return;
     }
@@ -658,7 +661,10 @@ async function handleUpdate(update: any, token: string) {
           { role: "system", content: `أنت Senior Engineer. مهمتك تعديل ملف "${name}" حسب طلب المستخدم بدقة.
 أرجع المحتوى النهائي للملف كامل بعد التعديل فقط، بدون أي شرح، بدون أسوار ماركداون (\`\`\`)، بدون أي نص خارج المحتوى. حافظ على البنية والصياغة الأصلية واغيّر فقط ما طُلب.` },
           { role: "user", content: `محتوى الملف الأصلي "${name}":\n\n${truncated}\n\nالتعديل المطلوب:\n${instructions}\n\nأرجع الملف الكامل بعد التعديل فقط.` },
-        ]);
+        ]).catch((e) => {
+          if (!isAiUnavailableError(e)) throw e;
+          return applyOfflineEdit(original, instructions, name);
+        });
         let clean = (edited ?? "").trim();
         clean = clean.replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
         if (!clean) throw new Error("ما كدرت أولد محتوى معدّل.");
@@ -739,7 +745,20 @@ async function handleUpdate(update: any, token: string) {
         await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[أنشأت صورة وأرسلتها] الوصف: ${prompt}` });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `ما كدرت أنشئ الصورة 😅\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        if (isAiUnavailableError(e)) {
+          const svgName = "alisa-offline-image.svg";
+          const svg = makeOfflineSvg(prompt);
+          const form = new FormData();
+          form.append("chat_id", String(chatId));
+          form.append("caption", "🎨 رصيد AI خلص، أرسلت لك صورة SVG مؤقتة بدل ما أصمت.");
+          if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+          form.append("document", new Blob([svg], { type: "image/svg+xml" }), svgName);
+          await tgForm(token, "sendDocument", form);
+          await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب إنشاء صورة] ${prompt}` });
+          await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[رصيد AI متوقف؛ أرسلت SVG مؤقت بدل الصورة التوليدية] ${prompt}` });
+        } else {
+          await tg(token, "sendMessage", { chat_id: chatId, text: `ما كدرت أنشئ الصورة 😅\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        }
       }
       return;
     }
@@ -754,7 +773,10 @@ async function handleUpdate(update: any, token: string) {
         const content = await aiChat([
           { role: "system", content: `أنت Senior Engineer. ولّد محتوى ملف "${name}" كامل وقابل للتشغيل مباشرة، نظيف وآمن وفعّال، مع تعليقات قصيرة عند الحاجة. أرجع المحتوى الخام فقط بدون أي شرح ولا أسوار ماركداون (لا \`\`\`) ولا أي نص خارجي.` },
           { role: "user", content: desc },
-        ]);
+        ]).catch((e) => {
+          if (!isAiUnavailableError(e)) throw e;
+          return makeOfflineFile(name, desc);
+        });
         // Strip any code fences (start/end, even repeated)
         let clean = content.trim();
         clean = clean.replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
@@ -844,7 +866,10 @@ async function handleUpdate(update: any, token: string) {
         messages.push({ role: "user", content: `${userName}: ${text}` });
       }
 
-      const reply = await aiChat(messages);
+      const reply = await aiChat(messages).catch((e) => {
+        if (!isAiUnavailableError(e)) throw e;
+        return offlineChatReply(text, isGroup, userName);
+      });
       await stopTyping(token, chatId, typingId);
       const final = reply?.trim() || "…";
 
@@ -886,7 +911,7 @@ async function handleUpdate(update: any, token: string) {
 
     } catch (e: any) {
       await stopTyping(token, chatId, typingId);
-      await tg(token, "sendMessage", { chat_id: chatId, text: `صار خطأ 😅\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+      await tg(token, "sendMessage", { chat_id: chatId, text: `صار خطأ 😅\n${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
     }
   } catch (e: any) {
     console.error("update error", e);
