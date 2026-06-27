@@ -296,9 +296,10 @@ function redactSecrets(input: string) {
 }
 
 function decodePdfString(raw: string) {
+  const escapes: Record<string, string> = { n: "\n", r: "\r", t: "\t", b: "\b", f: "\f", "(": "(", ")": ")", "\\": "\\" };
   return raw
     .slice(1, -1)
-    .replace(/\\([nrtbf()\\])/g, (_, ch) => ({ n: "\n", r: "\r", t: "\t", b: "\b", f: "\f", "(": "(", ")": ")", "\\": "\\" }[ch] ?? ch))
+    .replace(/\\([nrtbf()\\])/g, (_, ch: string) => escapes[ch] ?? ch)
     .replace(/\\([0-7]{1,3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
     .replace(/[\u0000-\u001F]+/g, " ")
     .trim();
