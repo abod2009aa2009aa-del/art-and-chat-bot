@@ -76,6 +76,70 @@ async function loadUserRecentAcrossGroups(userId: number, perGroup = 15): Promis
   } catch (e) { console.error("[mem] cross-group failed", e); return []; }
 }
 
+// ============ Long-term memory summarization ============
+// كاش لتلخيصات الرسائل القديمة (Long-Term Memory) لكل محادثة، لتفادي إعادة تلخيص كل مرة.
+const longTermCache = new Map<number, { until: number; summary: string; upto: string }>();
+
+async function loadLongTermSummary(chatId: number, olderThan: string): Promise<string> {
+  const cached = longTermCache.get(chatId);
+  if (cached && cached.until > Date.now() && cached.upto === olderThan) return cached.summary;
+  try {
+    const sb = await db();
+    const { data } = await sb
+      .from("telegram_messages")
+      .select("role,user_name,content,created_at")
+      .eq("chat_id", chatId)
+      .lt("created_at", olderThan)
+      .order("created_at", { ascending: false })
+      .limit(400);
+    const rows = (data ?? []).reverse();
+    if (rows.length < 30) return "";
+    const compact = rows
+      .map((r: any) => `${r.role === "user" ? (r.user_name ?? "user") : BOT_NAME}: ${String(r.content).slice(0, 300)}`)
+      .join("\n")
+      .slice(0, 20000);
+    let summary = "";
+    try {
+      summary = await aiChat([
+        { role: "system", content: `لخّص المحادثة التالية بنقاط عربية موجزة. احتفظ بأسماء المستخدمين، الطلبات المهمة، الملفات، الصور، الأكواد، والقرارات. اجعل التلخيص كذاكرة طويلة المدى دقيقة لبوت.` },
+        { role: "user", content: compact },
+      ], "google/gemini-2.5-flash-lite");
+    } catch {
+      // fallback: نص خام مختصر
+      summary = compact.slice(0, 4000);
+    }
+    longTermCache.set(chatId, { until: Date.now() + 10 * 60 * 1000, summary, upto: olderThan });
+    return summary;
+  } catch (e) { console.error("[mem] long-term failed", e); return ""; }
+}
+
+// ============ Web search (Grounding) ============
+async function webSearch(query: string): Promise<Array<{ title: string; url: string; snippet: string }>> {
+  const q = encodeURIComponent(query);
+  try {
+    const r = await fetch(`https://duckduckgo.com/html/?q=${q}&kl=wt-wt`, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; AlisaBot/1.0)" },
+    });
+    if (!r.ok) return [];
+    const html = await r.text();
+    const out: Array<{ title: string; url: string; snippet: string }> = [];
+    const blockRe = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+    let m: RegExpExecArray | null;
+    while ((m = blockRe.exec(html)) !== null && out.length < 6) {
+      const strip = (s: string) => s.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").trim();
+      let url = m[1];
+      // DuckDuckGo يلف الروابط بـ /l/?uddg=...
+      const uddg = url.match(/[?&]uddg=([^&]+)/);
+      if (uddg) { try { url = decodeURIComponent(uddg[1]); } catch { /* ignore */ } }
+      out.push({ title: strip(m[2]).slice(0, 180), url, snippet: strip(m[3]).slice(0, 320) });
+    }
+    return out;
+  } catch (e) {
+    console.error("[web-search]", e);
+    return [];
+  }
+}
+
 
 // ============ Helpers ============
 function deriveSecret(token: string) {
