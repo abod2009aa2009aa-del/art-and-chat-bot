@@ -779,13 +779,82 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
+    // /بحث <query> — بحث حي في الإنترنت (Grounding)
+    if (text.startsWith("/بحث") || text.startsWith("/search")) {
+      const q = text.replace(/^\/\S+\s*/, "").trim();
+      if (!q) { await tg(token, "sendMessage", { chat_id: chatId, text: "اكتب موضوع البحث بعد الأمر 🌐\nمثال: /بحث احدث اصدار Node" }); return; }
+      const typingId = await startTyping(token, chatId, msg.message_id);
+      try {
+        const results = await webSearch(q);
+        if (!results.length) {
+          await stopTyping(token, chatId, typingId);
+          await tg(token, "sendMessage", { chat_id: chatId, text: "ما لكيت نتائج مفيدة 😅", reply_to_message_id: msg.message_id });
+          return;
+        }
+        const grounded = `أنت مساعد يستخدم فقط النتائج التالية للإجابة بدقة. اذكر الأرقام بين قوسين كمصادر [1] [2].`;
+        const src = results.map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}\n${r.url}`).join("\n\n");
+        const answer = await aiChat([
+          { role: "system", content: grounded },
+          { role: "user", content: `السؤال: ${q}\n\nالنتائج:\n${src}\n\nأجب بالعربي بشكل منظم واذكر المصادر.` },
+        ]).catch(() => `نتائج البحث:\n\n${src}`);
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: (answer || "").slice(0, 4000), reply_to_message_id: msg.message_id, disable_web_page_preview: true } as any);
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[بحث] ${q}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[نتائج بحث] ${(answer || "").slice(0, 4000)}` });
+      } catch (e: any) {
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل البحث: ${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
+      }
+      return;
+    }
+
+    // /كود — رد على صورة (Screenshot) وتحويلها إلى كود قابل للتشغيل
+    if (text.startsWith("/كود") || text.startsWith("/code")) {
+      const target = msg.reply_to_message;
+      const photo = target?.photo?.[target.photo.length - 1] ?? msg.photo?.[msg.photo?.length - 1];
+      if (!photo) { await tg(token, "sendMessage", { chat_id: chatId, text: "دز الأمر رداً على صورة واجهة (Screenshot) 🖼️\nأو أرفق صورة مع الكابشن /كود html", reply_to_message_id: msg.message_id }); return; }
+      const hint = text.replace(/^\/\S+\s*/, "").trim() || "html";
+      const typingId = await startTyping(token, chatId, msg.message_id);
+      try {
+        const url = await tgGetFileUrl(token, photo.file_id);
+        const img = await fetch(url);
+        const buf = Buffer.from(await img.arrayBuffer());
+        const dataUrl = `data:image/jpeg;base64,${buf.toString("base64")}`;
+        const { name, mime } = detectFile(hint);
+        const code = await aiChat([
+          { role: "system", content: `أنت مصمم/مبرمج Senior. ستحوّل صورة واجهة (Screenshot) إلى كود ${detectLang(name)} كامل، responsive، نظيف، وقابل للتشغيل مباشرة. أرجع المحتوى الخام فقط بدون أي شرح ولا أسوار ماركداون.` },
+          { role: "user", content: [
+            { type: "text", text: `حوّل هذي الواجهة إلى ملف "${name}". ${hint}` },
+            { type: "image_url", image_url: { url: dataUrl } },
+          ]},
+        ]);
+        let clean = (code || "").trim().replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+        if (!clean) throw new Error("رجع رد فارغ");
+        await stopTyping(token, chatId, typingId);
+        const form = new FormData();
+        form.append("chat_id", String(chatId));
+        form.append("caption", `📄 ${name} — من الصورة`);
+        if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+        form.append("document", new Blob([clean], { type: mime }), name);
+        await tgForm(token, "sendDocument", form);
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[Screenshot → كود] ${hint}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حوّلت واجهة الصورة إلى ملف "${name}"]` });
+      } catch (e: any) {
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل التحويل: ${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
+      }
+      return;
+    }
+
     if (text.startsWith("/start") || text.startsWith("/help")) {
       await tg(token, "sendMessage", { chat_id: chatId, text:
 `هلا والله 👋 آني ${BOT_NAME} 🔥
 
 شأقدر أسوي:
-💬 دردشة طبيعية
+💬 دردشة طبيعية بذاكرة عملاقة (500+ رسالة + تلخيص طويل المدى)
 🖼️ تحليل صور / 🎨 /img <وصف>
+🎯 /كود — رد على Screenshot وأحوّلها إلى كود جاهز
+🌐 /بحث <سؤال> — بحث حي بالإنترنت مع مصادر
 📄 تحليل ملفات / 📝 /file <اسم.امتداد> <محتوى>
 ✏️ /تعديل <تفاصيل> — دزّ ملف مع الأمر بالكابشن ليعدّله ويرجعه
 🛡️ /ban و /mute <دقائق> (رداً على رسالة)
