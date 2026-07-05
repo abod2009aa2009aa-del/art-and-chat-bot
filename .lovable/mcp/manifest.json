@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "sdk_version": "0.20.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "none"
+  },
+  "mcp": {
+    "server": {
+      "name": "alisa-bot-mcp",
+      "version": "0.1.0",
+      "title": "Alisa Telegram Bot MCP"
+    },
+    "tools": [
+      {
+        "name": "search_messages",
+        "title": "Search Telegram messages",
+        "description": "Full-text search across stored Telegram conversation messages (user + assistant). Returns matching rows ordered by newest first.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Substring to search for in message content."
+            },
+            "chat_id": {
+              "description": "Optional Telegram chat_id to scope the search.",
+              "type": "number"
+            },
+            "limit": {
+              "description": "Max rows (default 20).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "query"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "recent_messages",
+        "title": "Recent Telegram messages",
+        "description": "Fetch the most recent messages in a Telegram chat, newest first.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "chat_id": {
+              "type": "number",
+              "description": "Telegram chat_id to fetch messages from."
+            },
+            "limit": {
+              "description": "Max rows (default 50).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          "required": [
+            "chat_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_chats",
+        "title": "List Telegram chats",
+        "description": "List distinct Telegram chats that have stored messages, with message counts and latest activity timestamp.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "description": "Max recent messages to scan (default 500).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
