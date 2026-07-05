@@ -11,7 +11,8 @@ const BOT_NAME = "أليسا";
 
 // ============ Persistent Memory (Lovable Cloud DB) ============
 // Conversation history is stored in `telegram_messages` table — never lost.
-const HISTORY_LIMIT = 200; // last N messages loaded per context for AI
+const HISTORY_LIMIT = 500; // last N messages loaded per context for AI (نافذة سياق ضخمة)
+const LONG_TERM_SUMMARY_AFTER = 300; // إذا زادت الرسائل، نلخّص القديم كذاكرة طويلة المدى
 
 type Msg = { role: "user" | "assistant"; name?: string; content: string; ts: number };
 
@@ -126,7 +127,9 @@ async function stopTyping(token: string, chatId: number, mid: number | null) {
 }
 
 // ============ AI Gateway ============
-const CHEAP_CHAT_MODELS = ["google/gemini-2.5-flash-lite", "google/gemini-3.1-flash-lite", "google/gemini-2.5-flash"];
+// النموذج الافتراضي: Gemini 3 Flash (نافذة سياق كبيرة + استدلال قوي + متعدد الوسائط)
+const PRIMARY_CHAT_MODEL = "google/gemini-3-flash-preview";
+const CHEAP_CHAT_MODELS = [PRIMARY_CHAT_MODEL, "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite", "google/gemini-3.1-flash-lite"];
 
 function isAiUnavailableError(error: unknown) {
   const msg = String((error as any)?.message ?? error ?? "");
