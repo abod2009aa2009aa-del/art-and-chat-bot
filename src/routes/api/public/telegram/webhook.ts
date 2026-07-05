@@ -916,6 +916,25 @@ async function handleUpdate(update: any, token: string) {
         history.push({ role: m.role, content: m.role === "user" ? `${m.name ?? ""}: ${m.content}` : m.content });
       }
 
+      // ذاكرة طويلة المدى: إذا وصلنا للحد نلخّص كل ما هو أقدم من أقدم رسالة محمّلة
+      let longTerm = "";
+      if (baseHist.length >= LONG_TERM_SUMMARY_AFTER) {
+        const oldestTs = new Date(baseHist[0].ts).toISOString();
+        longTerm = await loadLongTermSummary(chatId, oldestTs);
+      }
+
+      // بحث حي (Grounding): إذا المستخدم طلب صراحة أو استفسر عن معلومة متجددة
+      let webContext = "";
+      const asksLive = /(ابحث|بحث|جيب من الانترنت|اخر|أحدث|اليوم|السنة|2026|price|سعر|أسعار|حالياً|latest|news|أخبار)/i.test(text);
+      if (asksLive && text.length > 5) {
+        const q = text.replace(/^اليسا[،:]?\s*/i, "").replace(/^@\S+\s*/i, "").slice(0, 200);
+        const results = await webSearch(q);
+        if (results.length) {
+          webContext = `\n\n🌐 نتائج بحث حي من الويب لسؤال المستخدم (استخدمها كمصدر حديث ولا تخترع، اذكر المصدر بين قوسين):\n` +
+            results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   ${r.url}`).join("\n");
+        }
+      }
+
       let extraContext = "";
       if (!isGroup && userId) {
         const cross = await loadUserRecentAcrossGroups(userId, 12);
@@ -926,7 +945,10 @@ async function handleUpdate(update: any, token: string) {
         if (snippets.length) extraContext = `\n\nسياق من مجموعاتك الأخيرة:\n${snippets.join("\n\n")}`;
       }
 
-      const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: userIsAdmin, chatTitle: msg.chat.title, userName }) + extraContext;
+      const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: userIsAdmin, chatTitle: msg.chat.title, userName })
+        + (longTerm ? `\n\n🧠 ذاكرة طويلة المدى (تلخيص جلسات سابقة):\n${longTerm}` : "")
+        + webContext
+        + extraContext;
       const messages = [{ role: "system", content: sys }, ...history];
       // Ensure current msg is last user turn
       if (!history.length || history[history.length - 1].content?.indexOf(text) === -1) {
