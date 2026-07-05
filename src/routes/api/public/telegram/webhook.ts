@@ -11,7 +11,8 @@ const BOT_NAME = "أليسا";
 
 // ============ Persistent Memory (Lovable Cloud DB) ============
 // Conversation history is stored in `telegram_messages` table — never lost.
-const HISTORY_LIMIT = 200; // last N messages loaded per context for AI
+const HISTORY_LIMIT = 500; // last N messages loaded per context for AI (نافذة سياق ضخمة)
+const LONG_TERM_SUMMARY_AFTER = 300; // إذا زادت الرسائل، نلخّص القديم كذاكرة طويلة المدى
 
 type Msg = { role: "user" | "assistant"; name?: string; content: string; ts: number };
 
@@ -75,6 +76,70 @@ async function loadUserRecentAcrossGroups(userId: number, perGroup = 15): Promis
   } catch (e) { console.error("[mem] cross-group failed", e); return []; }
 }
 
+// ============ Long-term memory summarization ============
+// كاش لتلخيصات الرسائل القديمة (Long-Term Memory) لكل محادثة، لتفادي إعادة تلخيص كل مرة.
+const longTermCache = new Map<number, { until: number; summary: string; upto: string }>();
+
+async function loadLongTermSummary(chatId: number, olderThan: string): Promise<string> {
+  const cached = longTermCache.get(chatId);
+  if (cached && cached.until > Date.now() && cached.upto === olderThan) return cached.summary;
+  try {
+    const sb = await db();
+    const { data } = await sb
+      .from("telegram_messages")
+      .select("role,user_name,content,created_at")
+      .eq("chat_id", chatId)
+      .lt("created_at", olderThan)
+      .order("created_at", { ascending: false })
+      .limit(400);
+    const rows = (data ?? []).reverse();
+    if (rows.length < 30) return "";
+    const compact = rows
+      .map((r: any) => `${r.role === "user" ? (r.user_name ?? "user") : BOT_NAME}: ${String(r.content).slice(0, 300)}`)
+      .join("\n")
+      .slice(0, 20000);
+    let summary = "";
+    try {
+      summary = await aiChat([
+        { role: "system", content: `لخّص المحادثة التالية بنقاط عربية موجزة. احتفظ بأسماء المستخدمين، الطلبات المهمة، الملفات، الصور، الأكواد، والقرارات. اجعل التلخيص كذاكرة طويلة المدى دقيقة لبوت.` },
+        { role: "user", content: compact },
+      ], "google/gemini-2.5-flash-lite");
+    } catch {
+      // fallback: نص خام مختصر
+      summary = compact.slice(0, 4000);
+    }
+    longTermCache.set(chatId, { until: Date.now() + 10 * 60 * 1000, summary, upto: olderThan });
+    return summary;
+  } catch (e) { console.error("[mem] long-term failed", e); return ""; }
+}
+
+// ============ Web search (Grounding) ============
+async function webSearch(query: string): Promise<Array<{ title: string; url: string; snippet: string }>> {
+  const q = encodeURIComponent(query);
+  try {
+    const r = await fetch(`https://duckduckgo.com/html/?q=${q}&kl=wt-wt`, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; AlisaBot/1.0)" },
+    });
+    if (!r.ok) return [];
+    const html = await r.text();
+    const out: Array<{ title: string; url: string; snippet: string }> = [];
+    const blockRe = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+    let m: RegExpExecArray | null;
+    while ((m = blockRe.exec(html)) !== null && out.length < 6) {
+      const strip = (s: string) => s.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").trim();
+      let url = m[1];
+      // DuckDuckGo يلف الروابط بـ /l/?uddg=...
+      const uddg = url.match(/[?&]uddg=([^&]+)/);
+      if (uddg) { try { url = decodeURIComponent(uddg[1]); } catch { /* ignore */ } }
+      out.push({ title: strip(m[2]).slice(0, 180), url, snippet: strip(m[3]).slice(0, 320) });
+    }
+    return out;
+  } catch (e) {
+    console.error("[web-search]", e);
+    return [];
+  }
+}
+
 
 // ============ Helpers ============
 function deriveSecret(token: string) {
@@ -126,7 +191,9 @@ async function stopTyping(token: string, chatId: number, mid: number | null) {
 }
 
 // ============ AI Gateway ============
-const CHEAP_CHAT_MODELS = ["google/gemini-2.5-flash-lite", "google/gemini-3.1-flash-lite", "google/gemini-2.5-flash"];
+// النموذج الافتراضي: Gemini 3 Flash (نافذة سياق كبيرة + استدلال قوي + متعدد الوسائط)
+const PRIMARY_CHAT_MODEL = "google/gemini-3-flash-preview";
+const CHEAP_CHAT_MODELS = [PRIMARY_CHAT_MODEL, "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite", "google/gemini-3.1-flash-lite"];
 
 function isAiUnavailableError(error: unknown) {
   const msg = String((error as any)?.message ?? error ?? "");
@@ -233,10 +300,14 @@ function systemPrompt(opts: {
 قدراتك:
 - /img <وصف> — إنشاء صورة
 - /file <اسم.امتداد> <وصف/محتوى> — إنشاء أي ملف
+- /كود — رد على صورة (Screenshot) وتحويلها لكود جاهز
+- /بحث <سؤال> — بحث حي في الإنترنت (Grounding) مع مصادر
 - إرسال صورة لتحليلها
 - إرسال ملف (PDF / DOCX / TXT / كود) لتحليله، أو مع كابشن /تعديل لتعديله وإرجاعه
 - /ban و /mute <دقائق> (رداً على رسالة، للمشرفين)
-- /ping — اختبار`;
+- /ping — اختبار
+
+ذاكرتك: تحفظ كل الرسائل في قاعدة بيانات دائمة (Lovable Cloud). تستطيع الرجوع لآخر 500 رسالة كنافذة سياق كاملة، مع تلخيص طويل المدى لما هو أقدم. لا تقل أبداً "لا أتذكر" — راجع السياق أعلاه.`;
 
 }
 
@@ -712,13 +783,82 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
+    // /بحث <query> — بحث حي في الإنترنت (Grounding)
+    if (text.startsWith("/بحث") || text.startsWith("/search")) {
+      const q = text.replace(/^\/\S+\s*/, "").trim();
+      if (!q) { await tg(token, "sendMessage", { chat_id: chatId, text: "اكتب موضوع البحث بعد الأمر 🌐\nمثال: /بحث احدث اصدار Node" }); return; }
+      const typingId = await startTyping(token, chatId, msg.message_id);
+      try {
+        const results = await webSearch(q);
+        if (!results.length) {
+          await stopTyping(token, chatId, typingId);
+          await tg(token, "sendMessage", { chat_id: chatId, text: "ما لكيت نتائج مفيدة 😅", reply_to_message_id: msg.message_id });
+          return;
+        }
+        const grounded = `أنت مساعد يستخدم فقط النتائج التالية للإجابة بدقة. اذكر الأرقام بين قوسين كمصادر [1] [2].`;
+        const src = results.map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}\n${r.url}`).join("\n\n");
+        const answer = await aiChat([
+          { role: "system", content: grounded },
+          { role: "user", content: `السؤال: ${q}\n\nالنتائج:\n${src}\n\nأجب بالعربي بشكل منظم واذكر المصادر.` },
+        ]).catch(() => `نتائج البحث:\n\n${src}`);
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: (answer || "").slice(0, 4000), reply_to_message_id: msg.message_id, disable_web_page_preview: true } as any);
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[بحث] ${q}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[نتائج بحث] ${(answer || "").slice(0, 4000)}` });
+      } catch (e: any) {
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل البحث: ${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
+      }
+      return;
+    }
+
+    // /كود — رد على صورة (Screenshot) وتحويلها إلى كود قابل للتشغيل
+    if (text.startsWith("/كود") || text.startsWith("/code")) {
+      const target = msg.reply_to_message;
+      const photo = target?.photo?.[target.photo.length - 1] ?? msg.photo?.[msg.photo?.length - 1];
+      if (!photo) { await tg(token, "sendMessage", { chat_id: chatId, text: "دز الأمر رداً على صورة واجهة (Screenshot) 🖼️\nأو أرفق صورة مع الكابشن /كود html", reply_to_message_id: msg.message_id }); return; }
+      const hint = text.replace(/^\/\S+\s*/, "").trim() || "html";
+      const typingId = await startTyping(token, chatId, msg.message_id);
+      try {
+        const url = await tgGetFileUrl(token, photo.file_id);
+        const img = await fetch(url);
+        const buf = Buffer.from(await img.arrayBuffer());
+        const dataUrl = `data:image/jpeg;base64,${buf.toString("base64")}`;
+        const { name, mime } = detectFile(hint);
+        const code = await aiChat([
+          { role: "system", content: `أنت مصمم/مبرمج Senior. ستحوّل صورة واجهة (Screenshot) إلى كود ${detectLang(name)} كامل، responsive، نظيف، وقابل للتشغيل مباشرة. أرجع المحتوى الخام فقط بدون أي شرح ولا أسوار ماركداون.` },
+          { role: "user", content: [
+            { type: "text", text: `حوّل هذي الواجهة إلى ملف "${name}". ${hint}` },
+            { type: "image_url", image_url: { url: dataUrl } },
+          ]},
+        ]);
+        let clean = (code || "").trim().replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+        if (!clean) throw new Error("رجع رد فارغ");
+        await stopTyping(token, chatId, typingId);
+        const form = new FormData();
+        form.append("chat_id", String(chatId));
+        form.append("caption", `📄 ${name} — من الصورة`);
+        if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+        form.append("document", new Blob([clean], { type: mime }), name);
+        await tgForm(token, "sendDocument", form);
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[Screenshot → كود] ${hint}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حوّلت واجهة الصورة إلى ملف "${name}"]` });
+      } catch (e: any) {
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل التحويل: ${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
+      }
+      return;
+    }
+
     if (text.startsWith("/start") || text.startsWith("/help")) {
       await tg(token, "sendMessage", { chat_id: chatId, text:
 `هلا والله 👋 آني ${BOT_NAME} 🔥
 
 شأقدر أسوي:
-💬 دردشة طبيعية
+💬 دردشة طبيعية بذاكرة عملاقة (500+ رسالة + تلخيص طويل المدى)
 🖼️ تحليل صور / 🎨 /img <وصف>
+🎯 /كود — رد على Screenshot وأحوّلها إلى كود جاهز
+🌐 /بحث <سؤال> — بحث حي بالإنترنت مع مصادر
 📄 تحليل ملفات / 📝 /file <اسم.امتداد> <محتوى>
 ✏️ /تعديل <تفاصيل> — دزّ ملف مع الأمر بالكابشن ليعدّله ويرجعه
 🛡️ /ban و /mute <دقائق> (رداً على رسالة)
@@ -849,6 +989,25 @@ async function handleUpdate(update: any, token: string) {
         history.push({ role: m.role, content: m.role === "user" ? `${m.name ?? ""}: ${m.content}` : m.content });
       }
 
+      // ذاكرة طويلة المدى: إذا وصلنا للحد نلخّص كل ما هو أقدم من أقدم رسالة محمّلة
+      let longTerm = "";
+      if (baseHist.length >= LONG_TERM_SUMMARY_AFTER) {
+        const oldestTs = new Date(baseHist[0].ts).toISOString();
+        longTerm = await loadLongTermSummary(chatId, oldestTs);
+      }
+
+      // بحث حي (Grounding): إذا المستخدم طلب صراحة أو استفسر عن معلومة متجددة
+      let webContext = "";
+      const asksLive = /(ابحث|بحث|جيب من الانترنت|اخر|أحدث|اليوم|السنة|2026|price|سعر|أسعار|حالياً|latest|news|أخبار)/i.test(text);
+      if (asksLive && text.length > 5) {
+        const q = text.replace(/^اليسا[،:]?\s*/i, "").replace(/^@\S+\s*/i, "").slice(0, 200);
+        const results = await webSearch(q);
+        if (results.length) {
+          webContext = `\n\n🌐 نتائج بحث حي من الويب لسؤال المستخدم (استخدمها كمصدر حديث ولا تخترع، اذكر المصدر بين قوسين):\n` +
+            results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   ${r.url}`).join("\n");
+        }
+      }
+
       let extraContext = "";
       if (!isGroup && userId) {
         const cross = await loadUserRecentAcrossGroups(userId, 12);
@@ -859,7 +1018,10 @@ async function handleUpdate(update: any, token: string) {
         if (snippets.length) extraContext = `\n\nسياق من مجموعاتك الأخيرة:\n${snippets.join("\n\n")}`;
       }
 
-      const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: userIsAdmin, chatTitle: msg.chat.title, userName }) + extraContext;
+      const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: userIsAdmin, chatTitle: msg.chat.title, userName })
+        + (longTerm ? `\n\n🧠 ذاكرة طويلة المدى (تلخيص جلسات سابقة):\n${longTerm}` : "")
+        + webContext
+        + extraContext;
       const messages = [{ role: "system", content: sys }, ...history];
       // Ensure current msg is last user turn
       if (!history.length || history[history.length - 1].content?.indexOf(text) === -1) {
