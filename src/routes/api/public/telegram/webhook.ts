@@ -362,6 +362,9 @@ async function aiEditImage(imageDataUrl: string, prompt: string): Promise<Buffer
   }
   throw new Error(lastErr || "فشل تعديل الصورة");
 }
+
+// ============ System prompt ============
+function systemPrompt(opts: {
   userId: number; isGroup: boolean; isDev: boolean; isAdmin: boolean;
   chatTitle?: string; userName?: string; userUsername?: string;
 }) {
