@@ -981,19 +981,14 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
-    if (text.startsWith("/start") || text.startsWith("/help")) {
+    if (text.startsWith("/start") || text.startsWith("/help") || text === "/ميزات" || text === "/features") {
+      const now = baghdadNow();
       await tg(token, "sendMessage", { chat_id: chatId, text:
 `هلا والله 👋 آني ${BOT_NAME} 🔥
+🕐 ${now.human}
 
-شأقدر أسوي:
-💬 دردشة طبيعية بذاكرة عملاقة (500+ رسالة + تلخيص طويل المدى)
-🖼️ تحليل صور / 🎨 /img <وصف>
-🎯 /كود — رد على Screenshot وأحوّلها إلى كود جاهز
-🌐 /بحث <سؤال> — بحث حي بالإنترنت مع مصادر
-📄 تحليل ملفات / 📝 /file <اسم.امتداد> <محتوى>
-✏️ /تعديل <تفاصيل> — دزّ ملف مع الأمر بالكابشن ليعدّله ويرجعه
-🛡️ /ban و /mute <دقائق> (رداً على رسالة)
-🏓 /ping — اختبار اتصال`,
+📋 كل ميزاتي الحالية:
+${featuresListText()}`,
       });
       return;
     }
