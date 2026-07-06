@@ -304,8 +304,64 @@ async function aiImage(prompt: string): Promise<Buffer> {
   throw new Error(lastErr || "فشل توليد الصورة");
 }
 
-// ============ System prompt ============
-function systemPrompt(opts: {
+// تعديل صورة موجودة: نمرّر الصورة الأصلية + وصف التعديل لنموذج flash-image
+async function aiEditImage(imageDataUrl: string, prompt: string): Promise<Buffer> {
+  const key = process.env.LOVABLE_API_KEY!;
+  const attempts = [
+    { model: "google/gemini-2.5-flash-image" },
+    { model: "google/gemini-3.1-flash-image" },
+    { model: "google/gemini-3-pro-image" },
+  ];
+  let lastErr = "";
+  for (const a of attempts) {
+    try {
+      const body = {
+        model: a.model,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: `عدّل هذه الصورة حسب الطلب التالي وأرجع صورة معدّلة فقط: ${prompt}` },
+            { type: "image_url", image_url: { url: imageDataUrl } },
+          ],
+        }],
+        modalities: ["image", "text"],
+      };
+      const r = await fetch(`${GATEWAY}/chat/completions`, {
+        method: "POST",
+        headers: { "Lovable-API-Key": key, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const txt = await r.text();
+      if (!r.ok) {
+        lastErr = `[${a.model}] ${r.status}: ${txt.slice(0, 300)}`;
+        console.error("[img-edit]", lastErr);
+        if (r.status === 402) throw new Error(lastErr);
+        continue;
+      }
+      const data = JSON.parse(txt);
+      // ابحث عن صورة داخل الرد (قد تأتي كـ images[] أو كـ image_url داخل content)
+      const msg = data.choices?.[0]?.message;
+      const images: any[] = msg?.images ?? [];
+      let b64: string | undefined;
+      for (const im of images) {
+        const u = im?.image_url?.url ?? im?.url;
+        if (typeof u === "string" && u.startsWith("data:image")) { b64 = u.split(",")[1]; break; }
+      }
+      if (!b64 && Array.isArray(msg?.content)) {
+        for (const part of msg.content) {
+          const u = part?.image_url?.url;
+          if (typeof u === "string" && u.startsWith("data:image")) { b64 = u.split(",")[1]; break; }
+        }
+      }
+      if (!b64) { lastErr = `[${a.model}] لم يرجع صورة`; continue; }
+      return Buffer.from(b64, "base64");
+    } catch (e: any) {
+      lastErr = `[${a.model}] ${e?.message ?? e}`;
+      console.error("[img-edit]", lastErr);
+    }
+  }
+  throw new Error(lastErr || "فشل تعديل الصورة");
+}
   userId: number; isGroup: boolean; isDev: boolean; isAdmin: boolean;
   chatTitle?: string; userName?: string; userUsername?: string;
 }) {
