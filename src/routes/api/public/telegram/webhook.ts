@@ -711,7 +711,7 @@ async function handleUpdate(update: any, token: string) {
         const dataUrl = `data:image/jpeg;base64,${buf.toString("base64")}`;
         const prompt = text || "حلل هذي الصورة وقلي كل شي تشوفه بالتفصيل وبطريقة مسلية";
         const reply = await aiChat([
-          { role: "system", content: systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName }) },
+          { role: "system", content: systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName, userUsername }) },
           { role: "user", content: [
             { type: "text", text: prompt },
             { type: "image_url", image_url: { url: dataUrl } },
@@ -795,7 +795,7 @@ async function handleUpdate(update: any, token: string) {
     if (msg.document && !text.startsWith("/")) {
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
-        const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName });
+        const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName, userUsername });
         const reply = await analyzeDocument(token, msg.document, text, sys);
         await stopTyping(token, chatId, typingId);
         const final = (reply || "ما كدرت أحلل الملف 😅").slice(0, 4000);
@@ -1053,7 +1053,7 @@ async function handleUpdate(update: any, token: string) {
         if (snippets.length) extraContext = `\n\nسياق من مجموعاتك الأخيرة:\n${snippets.join("\n\n")}`;
       }
 
-      const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: userIsAdmin, chatTitle: msg.chat.title, userName })
+      const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: userIsAdmin, chatTitle: msg.chat.title, userName, userUsername })
         + (longTerm ? `\n\n🧠 ذاكرة طويلة المدى (تلخيص جلسات سابقة):\n${longTerm}` : "")
         + webContext
         + extraContext;
