@@ -668,8 +668,9 @@ async function handleUpdate(update: any, token: string) {
   const isGroup = chatType === "group" || chatType === "supergroup";
   const userId: number = msg.from?.id ?? 0;
   const userName: string = msg.from?.first_name ?? msg.from?.username ?? "صديقي";
+  const userUsername: string | undefined = msg.from?.username;
   const text: string = (msg.text ?? msg.caption ?? "").trim();
-  const isDev = userId === DEVELOPER_ID;
+  const isDev = userId === DEVELOPER_ID || (userUsername?.toLowerCase() === DEVELOPER_USERNAME.toLowerCase());
   const bot = await getBotInfo(token);
   console.log(`[tg] msg from ${userId} (${userName}) in ${chatType} ${chatId}: "${text.slice(0,100)}"`);
 
