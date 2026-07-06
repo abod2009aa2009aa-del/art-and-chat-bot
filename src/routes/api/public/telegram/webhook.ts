@@ -7,7 +7,45 @@ import { unzipSync, strFromU8 } from "fflate";
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
 const DEVELOPER_ID = 6475190017;
+const DEVELOPER_USERNAME = "GM5JX"; // بدون @
+const DEVELOPER_NAME = "عبدالله";
 const BOT_NAME = "أليسا";
+
+// ============ Features registry (أليسا تعرف قدراتها) ============
+const FEATURES: Array<{ cmd: string; desc: string }> = [
+  { cmd: "دردشة طبيعية", desc: "رد بلهجة عراقية بذاكرة عملاقة (500+ رسالة) + تلخيص طويل المدى محفوظ بقاعدة بيانات دائمة." },
+  { cmd: "معرفة الوقت", desc: "أعرف اليوم والتاريخ والساعة الحالية بتوقيت بغداد + سنة 2026 والمستجدات." },
+  { cmd: "معرفة المطور", desc: `أعرف مطوري ${DEVELOPER_NAME} (@${DEVELOPER_USERNAME} • ${DEVELOPER_ID}) وأتكلم معاه بدون قيود.` },
+  { cmd: "/img <وصف>", desc: "توليد صورة جديدة من نص." },
+  { cmd: "/عدل <وصف>", desc: "تعديل صورة: دز صورة مع كابشن /عدل <شنو تريد أغيّر> أو رد بالأمر على صورة." },
+  { cmd: "تحليل صور", desc: "دز صورة بدون أمر لأشرحها بالتفصيل." },
+  { cmd: "/كود", desc: "رد على Screenshot بالأمر ليحولها لكود جاهز (HTML/CSS/JSX...)." },
+  { cmd: "/بحث <سؤال>", desc: "بحث حي بالإنترنت (DuckDuckGo) مع مصادر مرقّمة." },
+  { cmd: "/file <اسم.امتداد> <وصف>", desc: "توليد أي ملف كود/نص وإرساله جاهز." },
+  { cmd: "/تعديل <تفاصيل>", desc: "دز ملف (TXT/كود/DOCX) مع الأمر بالكابشن ليعدّله ويرجعه." },
+  { cmd: "تحليل ملفات", desc: "PDF / DOCX / TXT / كل ملفات الكود — تلخيص وفهم." },
+  { cmd: "/ban و /mute", desc: "أدوات إشراف رداً على رسالة (للمشرفين)." },
+  { cmd: "/ping", desc: "اختبار اتصال." },
+  { cmd: "Offline Fallback", desc: "إذا رصيد AI خلص، أرد بتحليل محلي / SVG بديل بدل ما أصمت." },
+];
+function featuresListText(): string {
+  return FEATURES.map((f, i) => `${i + 1}. ${f.cmd} — ${f.desc}`).join("\n");
+}
+
+// الوقت بتوقيت بغداد (UTC+3)
+function baghdadNow(): { iso: string; human: string } {
+  const now = new Date();
+  const bg = new Date(now.getTime() + 3 * 3600 * 1000);
+  const days = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+  const months = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+  const d = bg.getUTCDay(), day = bg.getUTCDate(), mo = bg.getUTCMonth(), yr = bg.getUTCFullYear();
+  const hh = String(bg.getUTCHours()).padStart(2, "0");
+  const mm = String(bg.getUTCMinutes()).padStart(2, "0");
+  return {
+    iso: bg.toISOString(),
+    human: `${days[d]} ${day} ${months[mo]} ${yr} — الساعة ${hh}:${mm} بتوقيت بغداد`,
+  };
+}
 
 // ============ Persistent Memory (Lovable Cloud DB) ============
 // Conversation history is stored in `telegram_messages` table — never lost.
