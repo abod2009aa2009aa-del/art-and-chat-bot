@@ -759,6 +759,43 @@ async function handleUpdate(update: any, token: string) {
   }
 
   try {
+    // ===== Image edit (/عدل <وصف>) — على كابشن صورة أو رداً على صورة =====
+    {
+      const isEditImgCmd = /^\/(عدل|edit-?img|editphoto|رتوش)\b/i.test(text);
+      const target = msg.reply_to_message;
+      const editPhoto = msg.photo?.length ? msg.photo[msg.photo.length - 1] : (target?.photo?.length ? target.photo[target.photo.length - 1] : null);
+      if (isEditImgCmd && editPhoto) {
+        const typingId = await startTyping(token, chatId, msg.message_id);
+        try {
+          const instructions = text.replace(/^\/\S+\s*/, "").trim();
+          if (!instructions) throw new Error("اكتب شنو تريد تعدل بالصورة بعد الأمر.\nمثال: /عدل خلي الخلفية بحر");
+          const fileUrl = await tgGetFileUrl(token, editPhoto.file_id);
+          const img = await fetch(fileUrl);
+          const buf = Buffer.from(await img.arrayBuffer());
+          const dataUrl = `data:image/jpeg;base64,${buf.toString("base64")}`;
+          const png = await aiEditImage(dataUrl, instructions);
+          await stopTyping(token, chatId, typingId);
+          const form = new FormData();
+          form.append("chat_id", String(chatId));
+          form.append("caption", `✏️ تعديل: ${instructions.slice(0, 200)}`);
+          if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+          form.append("photo", new Blob([new Uint8Array(png)], { type: "image/png" }), "edited.png");
+          const res = await tgForm(token, "sendPhoto", form);
+          if (!res.ok) throw new Error(JSON.stringify(res));
+          await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب تعديل صورة] ${instructions}` });
+          await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[عدّلت الصورة وأرسلتها] الطلب: ${instructions}` });
+        } catch (e: any) {
+          await stopTyping(token, chatId, typingId);
+          await tg(token, "sendMessage", { chat_id: chatId, text: `فشل تعديل الصورة:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        }
+        return;
+      }
+      if (isEditImgCmd && !editPhoto) {
+        await tg(token, "sendMessage", { chat_id: chatId, text: "دز صورة مع الكابشن /عدل <شنو تريد أغير>\nأو رد بالأمر على صورة موجودة 🖼️", reply_to_message_id: msg.message_id });
+        return;
+      }
+    }
+
     // ===== Photo analysis (always answered) =====
     if (msg.photo?.length) {
       const typingId = await startTyping(token, chatId, msg.message_id);
