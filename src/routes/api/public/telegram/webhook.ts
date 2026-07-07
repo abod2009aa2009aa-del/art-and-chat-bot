@@ -1088,9 +1088,9 @@ ${featuresListText()}`,
     if (!text) return;
     const isMention = bot?.username && new RegExp(`@${bot.username}\\b`, "i").test(text);
     const isReplyToBot = msg.reply_to_message?.from?.id === bot?.id;
-    // الاسم لازم يجي مع كلام إضافي (مو بس "اليسا" لحالها)
-    const nameRe = new RegExp(`${BOT_NAME}`);
-    const isNameCall = nameRe.test(text) && text.replace(nameRe, "").trim().length >= 2;
+    // ترد فقط إذا الاسم "أليسا/اليسا/اليسه" بدايه الرساله
+    const nameStartRe = /^\s*(?:يا\s+)?(?:أليسا|اليسا|اليسه|أليسه|Alisa|alisa)\b[\s،,.:!؟]*/i;
+    const isNameCall = nameStartRe.test(text);
 
     if (isGroup && !isMention && !isReplyToBot && !isNameCall && !isDev) {
       // Stay silent in groups unless addressed — but occasional mood-based reaction
