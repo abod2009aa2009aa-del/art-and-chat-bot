@@ -423,6 +423,10 @@ async function aiImage(prompt: string): Promise<Buffer> {
       console.error("[img]", lastErr);
     }
   }
+  if (process.env.GEMINI_API_KEY) {
+    try { console.log("[img] fallback → Gemini direct"); return await geminiDirectImage(prompt); }
+    catch (e: any) { lastErr = `${lastErr} | gemini-direct: ${e?.message ?? e}`; }
+  }
   throw new Error(lastErr || "فشل توليد الصورة");
 }
 
