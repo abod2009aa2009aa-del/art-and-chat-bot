@@ -247,7 +247,15 @@ function friendlyAiError(error: unknown) {
 
 // ============ Google Gemini Direct Fallback (يشتغل حتى لو Lovable credits خلصت) ============
 const GEMINI_DIRECT = "https://generativelanguage.googleapis.com/v1beta/models";
-const GEMINI_CHAT_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"];
+const GEMINI_CHAT_MODELS = [
+  "gemini-3.5-flash",
+  "gemini-flash-latest",
+  "gemini-3.1-flash-lite",
+  "gemini-3-flash-preview",
+  "gemini-pro-latest",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash",
+];
 
 function toGeminiParts(content: any): any[] {
   if (typeof content === "string") return [{ text: content }];
@@ -384,8 +392,7 @@ async function aiChat(messages: any[], model?: string) {
       return await geminiDirectChat(messages);
     } catch (e: any) {
       console.error("[ai-chat] gemini direct also failed:", e?.message);
-      if (hit402) throw new Error(lastErr);
-      throw e;
+      throw new Error(`${lastErr ? `${lastErr} | ` : ""}Gemini direct: ${e?.message ?? e}`);
     }
   }
   throw new Error(lastErr || "AI request failed");
@@ -735,13 +742,13 @@ function applyOfflineEdit(original: string, instructions: string, name: string) 
 
 function offlineChatReply(text: string, isGroup: boolean, userName: string) {
   const clean = redactSecrets(text).trim();
-  if (/^(هلا|سلام|شلونك|مرحبا|هاي)\b/i.test(clean)) return `هلا ${userName} 😂 موجودة وياك، بس وضع الذكاء العميق متوقف حالياً بسبب الرصيد.`;
+  if (/^(هلا|سلام|شلونك|مرحبا|هاي)\b/i.test(clean)) return `هلا ${userName} 😂 موجودة وياك. شلونك؟`;
   if (/قوانين|ممنوع|rules/i.test(clean)) return "قوانين المجموعة: ممنوع روابط، ترويج، تبادل، سب، أو طلب خاص للتبادل. المخالف ينحذف كلامه وقد ينكتم/ينطرد.";
-  if (/ملف|كود|سكربت|برمج|python|javascript|html|css/i.test(clean)) return "دز الأمر بصيغة /file script.py وصف السكربت، وإذا الرصيد متوقف أسوي لك قالب برمجي محلي بدل ما أصمت.";
-  if (/صورة|img|image/i.test(clean)) return "إنشاء الصور الحقيقي يحتاج رصيد AI، بس أقدر أحفظ طلبك بالذاكرة وأرجع أوصفه أو أرسل بطاقة SVG مؤقتة.";
+  if (/ملف|كود|سكربت|برمج|python|javascript|html|css/i.test(clean)) return "دز الأمر بصيغة /file script.py وصف السكربت، وأجهز لك ملف برمجي وأرسله مباشرة.";
+  if (/صورة|img|image/i.test(clean)) return "اكتب /img وبعدها وصف الصورة، أو دز صورة ويا /عدل حتى أعدلها حسب طلبك.";
   return isGroup
-    ? "سمعتك 😂 حالياً وضع الرد المحلي شغال لأن رصيد AI خلص، أكتب طلب واضح أو استخدم /file أو دز ملف أحلله محلياً."
-    : `تمام ${userName}، آني موجودة. حالياً أجاوب محلياً لأن رصيد AI خلص، بس الذاكرة والتحليل النصي والملفات البسيطة تشتغل.`;
+    ? "سمعتك 😂 اكتب طلبك واضح وأنا وياك."
+    : `تمام ${userName}، آني موجودة وياك. شتريد أسويلك؟`;
 }
 
 function makeOfflineSvg(prompt: string) {
