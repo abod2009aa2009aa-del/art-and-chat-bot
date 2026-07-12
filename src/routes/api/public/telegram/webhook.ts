@@ -26,7 +26,7 @@ const FEATURES: Array<{ cmd: string; desc: string }> = [
   { cmd: "تحليل ملفات", desc: "PDF / DOCX / TXT / كل ملفات الكود — تلخيص وفهم." },
   { cmd: "/ban و /mute", desc: "أدوات إشراف رداً على رسالة (للمشرفين)." },
   { cmd: "/ping", desc: "اختبار اتصال." },
-  { cmd: "Offline Fallback", desc: "إذا رصيد AI خلص، أرد بتحليل محلي / SVG بديل بدل ما أصمت." },
+  { cmd: "وضع استمرار الخدمة", desc: "إذا صار ضغط على نموذج معيّن، أبدّل تلقائياً لمسار ثاني حتى أبقى أرد وما أصمت." },
 ];
 function featuresListText(): string {
   return FEATURES.map((f, i) => `${i + 1}. ${f.cmd} — ${f.desc}`).join("\n");
@@ -240,14 +240,22 @@ function isAiUnavailableError(error: unknown) {
 
 function friendlyAiError(error: unknown) {
   if (isAiUnavailableError(error)) {
-    return "رصيد الذكاء خلص حالياً، شغّلت لك الوضع المحلي بدون AI حتى البوت ما يصمت.";
+    return "صار ضغط مؤقت على نماذج الذكاء. جرّب بعد لحظات أو أرسل طلب أبسط.";
   }
   return String((error as any)?.message ?? error ?? "خطأ غير معروف").slice(0, 700);
 }
 
 // ============ Google Gemini Direct Fallback (يشتغل حتى لو Lovable credits خلصت) ============
 const GEMINI_DIRECT = "https://generativelanguage.googleapis.com/v1beta/models";
-const GEMINI_CHAT_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"];
+const GEMINI_CHAT_MODELS = [
+  "gemini-3.5-flash",
+  "gemini-flash-latest",
+  "gemini-3.1-flash-lite",
+  "gemini-3-flash-preview",
+  "gemini-pro-latest",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash",
+];
 
 function toGeminiParts(content: any): any[] {
   if (typeof content === "string") return [{ text: content }];
@@ -384,8 +392,7 @@ async function aiChat(messages: any[], model?: string) {
       return await geminiDirectChat(messages);
     } catch (e: any) {
       console.error("[ai-chat] gemini direct also failed:", e?.message);
-      if (hit402) throw new Error(lastErr);
-      throw e;
+      throw new Error(`${lastErr ? `${lastErr} | ` : ""}Gemini direct: ${e?.message ?? e}`);
     }
   }
   throw new Error(lastErr || "AI request failed");
@@ -735,13 +742,13 @@ function applyOfflineEdit(original: string, instructions: string, name: string) 
 
 function offlineChatReply(text: string, isGroup: boolean, userName: string) {
   const clean = redactSecrets(text).trim();
-  if (/^(هلا|سلام|شلونك|مرحبا|هاي)\b/i.test(clean)) return `هلا ${userName} 😂 موجودة وياك، بس وضع الذكاء العميق متوقف حالياً بسبب الرصيد.`;
+  if (/^(هلا|سلام|شلونك|مرحبا|هاي)\b/i.test(clean)) return `هلا ${userName} 😂 موجودة وياك. شلونك؟`;
   if (/قوانين|ممنوع|rules/i.test(clean)) return "قوانين المجموعة: ممنوع روابط، ترويج، تبادل، سب، أو طلب خاص للتبادل. المخالف ينحذف كلامه وقد ينكتم/ينطرد.";
-  if (/ملف|كود|سكربت|برمج|python|javascript|html|css/i.test(clean)) return "دز الأمر بصيغة /file script.py وصف السكربت، وإذا الرصيد متوقف أسوي لك قالب برمجي محلي بدل ما أصمت.";
-  if (/صورة|img|image/i.test(clean)) return "إنشاء الصور الحقيقي يحتاج رصيد AI، بس أقدر أحفظ طلبك بالذاكرة وأرجع أوصفه أو أرسل بطاقة SVG مؤقتة.";
+  if (/ملف|كود|سكربت|برمج|python|javascript|html|css/i.test(clean)) return "دز الأمر بصيغة /file script.py وصف السكربت، وأجهز لك ملف برمجي وأرسله مباشرة.";
+  if (/صورة|img|image/i.test(clean)) return "اكتب /img وبعدها وصف الصورة، أو دز صورة ويا /عدل حتى أعدلها حسب طلبك.";
   return isGroup
-    ? "سمعتك 😂 حالياً وضع الرد المحلي شغال لأن رصيد AI خلص، أكتب طلب واضح أو استخدم /file أو دز ملف أحلله محلياً."
-    : `تمام ${userName}، آني موجودة. حالياً أجاوب محلياً لأن رصيد AI خلص، بس الذاكرة والتحليل النصي والملفات البسيطة تشتغل.`;
+    ? "سمعتك 😂 اكتب طلبك واضح وأنا وياك."
+    : `تمام ${userName}، آني موجودة وياك. شتريد أسويلك؟`;
 }
 
 function makeOfflineSvg(prompt: string) {
@@ -755,7 +762,7 @@ function makeOfflineSvg(prompt: string) {
   <path d="M0 720 C220 620 330 850 520 730 C700 620 830 690 1024 610 L1024 1024 L0 1024 Z" fill="#22c55e" opacity="0.75"/>
   <text x="72" y="120" fill="#ffffff" font-family="Arial, sans-serif" font-size="42" font-weight="700">أليسا - وضع محلي</text>
   <foreignObject x="72" y="180" width="880" height="420"><div xmlns="http://www.w3.org/1999/xhtml" style="color:white;font:36px Arial;line-height:1.35;direction:rtl">${safe || "صورة مؤقتة"}</div></foreignObject>
-  <text x="72" y="930" fill="#d1fae5" font-family="Arial, sans-serif" font-size="28">الصورة التوليدية الحقيقية تحتاج رصيد AI</text>
+  <text x="72" y="930" fill="#d1fae5" font-family="Arial, sans-serif" font-size="28">بديل مؤقت إلى أن تكتمل الصورة التوليدية</text>
 </svg>`;
 }
 
@@ -798,7 +805,7 @@ async function analyzeDocument(token: string, doc: any, userCaption: string, sys
     } catch (e) {
       if (!isAiUnavailableError(e)) throw e;
       const loose = extractPdfLooseText(buf);
-      return offlineStructuredSummary(name, "pdf", loose, ask, "رصيد AI متوقف؛ هذا تحليل محلي مستخرج من نص PDF المتاح فقط.");
+      return offlineStructuredSummary(name, "pdf", loose, ask, "تحليل سريع مستخرج من نص PDF المتاح.");
     }
   }
 
@@ -815,7 +822,7 @@ async function analyzeDocument(token: string, doc: any, userCaption: string, sys
       ]);
     } catch (e) {
       if (!isAiUnavailableError(e)) throw e;
-      return offlineStructuredSummary(name, "docx", truncated, ask, "رصيد AI متوقف؛ هذا تحليل محلي بدون نموذج ذكاء.");
+      return offlineStructuredSummary(name, "docx", truncated, ask, "تحليل سريع لمحتوى DOCX المتاح.");
     }
   }
 
@@ -831,7 +838,7 @@ async function analyzeDocument(token: string, doc: any, userCaption: string, sys
       ]);
     } catch (e) {
       if (!isAiUnavailableError(e)) throw e;
-      return offlineStructuredSummary(name, ext || mime, text, ask, "رصيد AI متوقف؛ هذا تحليل محلي للملف حتى ما أبقى صامتة.");
+      return offlineStructuredSummary(name, ext || mime, text, ask, "تحليل سريع للملف حتى يصلك الرد بدون تأخير.");
     }
   }
 
@@ -950,7 +957,7 @@ async function handleUpdate(update: any, token: string) {
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         const fallback = isAiUnavailableError(e)
-          ? "رصيد تحليل الصور بالذكاء خلص حالياً، لذلك ما أگدر أشوف تفاصيل الصورة بدقة هسه. الرسالة انحفظت بالذاكرة، جرّب تحليل ملف نصي/كود أو /ping للتأكد أن البوت شغال."
+          ? "صار ضغط مؤقت على تحليل الصور. الرسالة انحفظت بالذاكرة، جرّب بعد لحظات أو دز صورة أوضح."
           : `خطأ بتحليل الصورة:\n${e?.message ?? e}`;
         await tg(token, "sendMessage", { chat_id: chatId, text: fallback, reply_to_message_id: msg.message_id });
       }
@@ -1146,12 +1153,12 @@ ${featuresListText()}`,
           const svg = makeOfflineSvg(prompt);
           const form = new FormData();
           form.append("chat_id", String(chatId));
-          form.append("caption", "🎨 رصيد AI خلص، أرسلت لك صورة SVG مؤقتة بدل ما أصمت.");
+          form.append("caption", "🎨 أرسلت لك بديل مؤقت إلى أن تكتمل الصورة التوليدية.");
           if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
           form.append("document", new Blob([svg], { type: "image/svg+xml" }), svgName);
           await tgForm(token, "sendDocument", form);
           await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب إنشاء صورة] ${prompt}` });
-          await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[رصيد AI متوقف؛ أرسلت SVG مؤقت بدل الصورة التوليدية] ${prompt}` });
+          await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[أرسلت SVG مؤقت بدل الصورة التوليدية] ${prompt}` });
         } else {
           await tg(token, "sendMessage", { chat_id: chatId, text: `ما كدرت أنشئ الصورة 😅\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
         }
