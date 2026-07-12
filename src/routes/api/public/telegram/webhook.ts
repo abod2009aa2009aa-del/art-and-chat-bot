@@ -486,6 +486,10 @@ async function aiEditImage(imageDataUrl: string, prompt: string): Promise<Buffer
       console.error("[img-edit]", lastErr);
     }
   }
+  if (process.env.GEMINI_API_KEY) {
+    try { console.log("[img-edit] fallback → Gemini direct"); return await geminiDirectImage(prompt, imageDataUrl); }
+    catch (e: any) { lastErr = `${lastErr} | gemini-direct: ${e?.message ?? e}`; }
+  }
   throw new Error(lastErr || "فشل تعديل الصورة");
 }
 
