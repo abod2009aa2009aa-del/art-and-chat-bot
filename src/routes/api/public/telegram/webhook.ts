@@ -235,7 +235,7 @@ const CHEAP_CHAT_MODELS = [PRIMARY_CHAT_MODEL, "google/gemini-2.5-flash", "googl
 
 function isAiUnavailableError(error: unknown) {
   const msg = String((error as any)?.message ?? error ?? "");
-  return /AI\s*402|not enough credits|insufficient credits|credit|quota/i.test(msg);
+  return /AI\s*402|not enough credits|insufficient credits|credit|quota|Payment Required/i.test(msg);
 }
 
 function friendlyAiError(error: unknown) {
@@ -245,10 +245,122 @@ function friendlyAiError(error: unknown) {
   return String((error as any)?.message ?? error ?? "خطأ غير معروف").slice(0, 700);
 }
 
+// ============ Google Gemini Direct Fallback (يشتغل حتى لو Lovable credits خلصت) ============
+const GEMINI_DIRECT = "https://generativelanguage.googleapis.com/v1beta/models";
+const GEMINI_CHAT_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"];
+
+function toGeminiParts(content: any): any[] {
+  if (typeof content === "string") return [{ text: content }];
+  if (!Array.isArray(content)) return [{ text: String(content ?? "") }];
+  const parts: any[] = [];
+  for (const p of content) {
+    if (!p) continue;
+    if (p.type === "text" && p.text) parts.push({ text: p.text });
+    else if (p.type === "image_url" && p.image_url?.url) {
+      const url: string = p.image_url.url;
+      if (url.startsWith("data:")) {
+        const [meta, data] = url.split(",");
+        const mime = meta.match(/data:([^;]+)/)?.[1] || "image/jpeg";
+        parts.push({ inlineData: { mimeType: mime, data } });
+      }
+    } else if (p.type === "file" && p.file?.file_data) {
+      const url: string = p.file.file_data;
+      if (url.startsWith("data:")) {
+        const [meta, data] = url.split(",");
+        const mime = meta.match(/data:([^;]+)/)?.[1] || "application/octet-stream";
+        parts.push({ inlineData: { mimeType: mime, data } });
+      }
+    }
+  }
+  return parts.length ? parts : [{ text: "" }];
+}
+
+async function geminiDirectChat(messages: any[]): Promise<string> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY missing");
+  const systemMessages = messages.filter(m => m.role === "system");
+  const convo = messages.filter(m => m.role !== "system");
+  const contents = convo.map(m => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: toGeminiParts(m.content),
+  }));
+  const systemInstruction = systemMessages.length
+    ? { parts: [{ text: systemMessages.map(m => (typeof m.content === "string" ? m.content : "")).join("\n\n") }] }
+    : undefined;
+  let lastErr = "";
+  for (const model of GEMINI_CHAT_MODELS) {
+    try {
+      const r = await fetch(`${GEMINI_DIRECT}/${model}:generateContent?key=${key}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents,
+          ...(systemInstruction ? { systemInstruction } : {}),
+          safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+          ],
+        }),
+      });
+      const txt = await r.text();
+      if (!r.ok) { lastErr = `[gemini-direct ${model}] ${r.status}: ${txt.slice(0, 300)}`; console.error(lastErr); continue; }
+      const data = JSON.parse(txt);
+      const out = data.candidates?.[0]?.content?.parts?.map((p: any) => p.text).filter(Boolean).join("") ?? "";
+      if (out) return out;
+      lastErr = `[gemini-direct ${model}] لا نص`;
+    } catch (e: any) {
+      lastErr = `[gemini-direct ${model}] ${e?.message ?? e}`;
+      console.error(lastErr);
+    }
+  }
+  throw new Error(lastErr || "Gemini direct failed");
+}
+
+async function geminiDirectImage(prompt: string, inputImageDataUrl?: string): Promise<Buffer> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY missing");
+  const parts: any[] = [{ text: prompt }];
+  if (inputImageDataUrl?.startsWith("data:")) {
+    const [meta, data] = inputImageDataUrl.split(",");
+    const mime = meta.match(/data:([^;]+)/)?.[1] || "image/jpeg";
+    parts.push({ inlineData: { mimeType: mime, data } });
+  }
+  const models = ["gemini-2.5-flash-image", "gemini-2.0-flash-exp-image-generation"];
+  let lastErr = "";
+  for (const model of models) {
+    try {
+      const r = await fetch(`${GEMINI_DIRECT}/${model}:generateContent?key=${key}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts }],
+          generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+        }),
+      });
+      const txt = await r.text();
+      if (!r.ok) { lastErr = `[gemini-img ${model}] ${r.status}: ${txt.slice(0, 300)}`; console.error(lastErr); continue; }
+      const data = JSON.parse(txt);
+      const partsOut = data.candidates?.[0]?.content?.parts ?? [];
+      for (const p of partsOut) {
+        const b64 = p?.inlineData?.data ?? p?.inline_data?.data;
+        if (b64) return Buffer.from(b64, "base64");
+      }
+      lastErr = `[gemini-img ${model}] لا صورة`;
+    } catch (e: any) {
+      lastErr = `[gemini-img ${model}] ${e?.message ?? e}`;
+      console.error(lastErr);
+    }
+  }
+  throw new Error(lastErr || "Gemini image failed");
+}
+
 async function aiChat(messages: any[], model?: string) {
   const key = process.env.LOVABLE_API_KEY!;
   const models = model ? [model] : CHEAP_CHAT_MODELS;
   let lastErr = "";
+  let hit402 = false;
   for (const currentModel of models) {
     const r = await fetch(`${GATEWAY}/chat/completions`, {
       method: "POST",
@@ -259,12 +371,22 @@ async function aiChat(messages: any[], model?: string) {
     if (!r.ok) {
       lastErr = `AI ${r.status}: ${txt}`;
       console.error("[ai-chat]", currentModel, lastErr.slice(0, 500));
-      // 402 is workspace-billing, not model-specific; retrying other models only wastes requests.
-      if (r.status === 402) throw new Error(lastErr);
+      if (r.status === 402) { hit402 = true; break; }
       continue;
     }
     const data = JSON.parse(txt);
     return (data.choices?.[0]?.message?.content ?? "") as string;
+  }
+  // Lovable failed → try Google Gemini direct
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      console.log("[ai-chat] falling back to Gemini direct API");
+      return await geminiDirectChat(messages);
+    } catch (e: any) {
+      console.error("[ai-chat] gemini direct also failed:", e?.message);
+      if (hit402) throw new Error(lastErr);
+      throw e;
+    }
   }
   throw new Error(lastErr || "AI request failed");
 }
