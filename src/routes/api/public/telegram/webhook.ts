@@ -1421,6 +1421,16 @@ ${featuresListText()}`,
 
 const lastBotMsgIds = new Set<string>();
 
+let commandsRegistered = false;
+async function ensureCommandsRegistered(token: string) {
+  if (commandsRegistered) return;
+  commandsRegistered = true;
+  try {
+    const r: any = await tg(token, "setMyCommands", { commands: BOT_COMMANDS, scope: { type: "default" } });
+    console.log("[tg] setMyCommands →", r?.ok, r?.description ?? "");
+  } catch (e) { console.error("[tg] setMyCommands failed", e); commandsRegistered = false; }
+}
+
 async function handleReaction(r: any, token: string) {
   // If a user reacted on bot's message, sometimes react back to *their* recent message
   const chatId = r.chat?.id; const userId = r.user?.id; const mid = r.message_id;
