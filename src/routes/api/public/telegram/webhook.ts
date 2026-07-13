@@ -2,6 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createHash, timingSafeEqual } from "crypto";
 import { inflateSync } from "zlib";
 import { unzipSync, strFromU8 } from "fflate";
+import {
+  BOT_COMMANDS, AI_TOOL_KEYS, runAiTool,
+  toolIp, toolDns, toolWhois, toolPingUrl, toolMeta, toolShort,
+  toolWeather, toolCurrency, toolCalc,
+} from "@/lib/telegram-tools";
 
 
 
