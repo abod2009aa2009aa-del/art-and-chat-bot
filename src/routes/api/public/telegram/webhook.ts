@@ -1457,6 +1457,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return Response.json({ ok: true });
         }
         console.log("[tg] POST webhook ok, update_id=", update?.update_id);
+        // Register the Telegram command menu once per Worker instance
+        await ensureCommandsRegistered(token);
         try {
           await handleUpdate(update, token);
         } catch (e: any) {
