@@ -2,6 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createHash, timingSafeEqual } from "crypto";
 import { inflateSync } from "zlib";
 import { unzipSync, strFromU8 } from "fflate";
+import {
+  BOT_COMMANDS, AI_TOOL_KEYS, runAiTool,
+  toolIp, toolDns, toolWhois, toolPingUrl, toolMeta, toolShort,
+  toolWeather, toolCurrency, toolCalc,
+} from "@/lib/telegram-tools";
 
 
 
@@ -1044,12 +1049,83 @@ async function handleUpdate(update: any, token: string) {
 
 
     // ===== Commands =====
-    if (text.startsWith("/ping")) {
+    if (text.startsWith("/ping") && !text.startsWith("/ping_url")) {
       console.log("[tg] /ping from", userId, "chat", chatId);
       const r: any = await tg(token, "sendMessage", { chat_id: chatId, text: "Pong! ✅ System is online", reply_to_message_id: msg.message_id });
       console.log("[tg] /ping sendMessage result:", JSON.stringify(r));
       return;
     }
+
+    // ===== Network / API tool commands (real APIs, no AI) =====
+    const netCmd = text.match(/^\/(ip|dns|whois|ping_url|meta|short|weather|currency|calc)(?:@\w+)?\s*(.*)$/is);
+    if (netCmd) {
+      const cmd = netCmd[1].toLowerCase();
+      const arg = (netCmd[2] || "").trim();
+      const typingId = await startTyping(token, chatId, msg.message_id);
+      try {
+        let out = "";
+        if (cmd === "ip") out = await toolIp(arg);
+        else if (cmd === "dns") {
+          const [d, t] = arg.split(/\s+/);
+          out = await toolDns(d ?? "", t ?? "A");
+        }
+        else if (cmd === "whois") out = await toolWhois(arg);
+        else if (cmd === "ping_url") out = await toolPingUrl(arg);
+        else if (cmd === "meta") out = await toolMeta(arg);
+        else if (cmd === "short") out = await toolShort(arg);
+        else if (cmd === "weather") out = await toolWeather(arg);
+        else if (cmd === "currency") out = await toolCurrency(arg);
+        else if (cmd === "calc") out = toolCalc(arg);
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: (out || "لا نتائج").slice(0, 4000), reply_to_message_id: msg.message_id, disable_web_page_preview: true } as any);
+      } catch (e: any) {
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل الأمر /${cmd}:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+      }
+      return;
+    }
+
+    // ===== AI-backed tool commands (specialized prompts) =====
+    const aiCmd = text.match(/^\/(\w+)(?:@\w+)?\s*([\s\S]*)$/);
+    if (aiCmd && AI_TOOL_KEYS.includes(aiCmd[1].toLowerCase())) {
+      const key = aiCmd[1].toLowerCase();
+      let arg = (aiCmd[2] || "").trim();
+      // If replying to a message, use its text/caption as the arg (great for /explain, /debug, etc.)
+      if (!arg && msg.reply_to_message) {
+        arg = (msg.reply_to_message.text ?? msg.reply_to_message.caption ?? "").trim();
+      }
+      if (!arg && !["quote", "joke"].includes(key)) {
+        await tg(token, "sendMessage", { chat_id: chatId, text: `اكتب المحتوى بعد الأمر /${key} — أو رد بالأمر على رسالة تحتوي على المحتوى.`, reply_to_message_id: msg.message_id });
+        return;
+      }
+      const typingId = await startTyping(token, chatId, msg.message_id);
+      try {
+        const reply = await runAiTool(key, arg, aiChat);
+        await stopTyping(token, chatId, typingId);
+        // Reuse the auto-file extraction downstream: send via same FILE:<name> pipeline
+        const fileBlock = /```FILE:(\S+?)\s*\n([\s\S]*?)```/g;
+        const files: Array<{ name: string; code: string }> = [];
+        let m: RegExpExecArray | null;
+        while ((m = fileBlock.exec(reply)) !== null) files.push({ name: m[1].trim(), code: m[2].trim() });
+        const intro = reply.replace(fileBlock, "").trim();
+        if (intro) await tg(token, "sendMessage", { chat_id: chatId, text: intro.slice(0, 4000), reply_to_message_id: msg.message_id });
+        for (const f of files) {
+          const form = new FormData();
+          form.append("chat_id", String(chatId));
+          form.append("caption", `📄 ${f.name}`);
+          if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+          form.append("document", new Blob([f.code], { type: mimeFor(f.name) }), f.name);
+          await tgForm(token, "sendDocument", form);
+        }
+        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[/${key}] ${arg.slice(0, 500)}` });
+        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: reply.slice(0, 8000) });
+      } catch (e: any) {
+        await stopTyping(token, chatId, typingId);
+        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل /${key}: ${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
+      }
+      return;
+    }
+
 
     // /بحث <query> — بحث حي في الإنترنت (Grounding)
     if (text.startsWith("/بحث") || text.startsWith("/search")) {
@@ -1345,6 +1421,16 @@ ${featuresListText()}`,
 
 const lastBotMsgIds = new Set<string>();
 
+let commandsRegistered = false;
+async function ensureCommandsRegistered(token: string) {
+  if (commandsRegistered) return;
+  commandsRegistered = true;
+  try {
+    const r: any = await tg(token, "setMyCommands", { commands: BOT_COMMANDS, scope: { type: "default" } });
+    console.log("[tg] setMyCommands →", r?.ok, r?.description ?? "");
+  } catch (e) { console.error("[tg] setMyCommands failed", e); commandsRegistered = false; }
+}
+
 async function handleReaction(r: any, token: string) {
   // If a user reacted on bot's message, sometimes react back to *their* recent message
   const chatId = r.chat?.id; const userId = r.user?.id; const mid = r.message_id;
@@ -1381,6 +1467,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return Response.json({ ok: true });
         }
         console.log("[tg] POST webhook ok, update_id=", update?.update_id);
+        // Register the Telegram command menu once per Worker instance
+        await ensureCommandsRegistered(token);
         try {
           await handleUpdate(update, token);
         } catch (e: any) {
