@@ -5,8 +5,8 @@
 export type AiChat = (messages: any[], model?: string) => Promise<string>;
 
 // ==================== BOT COMMANDS MENU ====================
-// Telegram limits: 32 commands max, command must be [a-z0-9_], up to 32 chars,
-// description up to 256 chars. We keep the menu concise (~30 entries).
+// Telegram allows up to 100 commands. All tools registered so the user
+// can browse the whole feature set from the "/" menu.
 export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "start", description: "بدء التشغيل + قائمة الميزات" },
   { command: "help", description: "المساعدة والميزات المتاحة" },
@@ -40,6 +40,49 @@ export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "weather", description: "☀️ حالة الطقس لمدينة" },
   { command: "currency", description: "💱 تحويل عملات" },
   { command: "calc", description: "🧮 آلة حاسبة متقدمة" },
+  // ==== 40 ميزة إضافية ====
+  { command: "poem", description: "✒️ كتابة قصيدة عربية" },
+  { command: "story2", description: "📖 قصة قصيرة إبداعية" },
+  { command: "dream", description: "🌙 تفسير حلم" },
+  { command: "name", description: "🏷️ اقتراح أسماء (طفل/شركة/منتج)" },
+  { command: "slogan", description: "📣 شعار تسويقي" },
+  { command: "cv", description: "📄 توليد سيرة ذاتية" },
+  { command: "cover", description: "✉️ رسالة تقديم للوظيفة" },
+  { command: "interview", description: "🎤 أسئلة مقابلة عمل" },
+  { command: "study", description: "📚 خطة دراسة" },
+  { command: "workout", description: "💪 خطة تمرين رياضي" },
+  { command: "diet", description: "🥗 نظام غذائي" },
+  { command: "plan", description: "🗓️ خطة عمل / مشروع" },
+  { command: "pitch", description: "🚀 عرض مشروع (Pitch)" },
+  { command: "sentiment", description: "🙂 تحليل مشاعر النص" },
+  { command: "keywords", description: "🔑 استخراج كلمات مفتاحية" },
+  { command: "hashtags", description: "#️⃣ توليد هاشتاقات" },
+  { command: "caption_ig", description: "📸 تعليق انستقرام" },
+  { command: "tweet", description: "🐦 صياغة تغريدة X" },
+  { command: "linkedin", description: "💼 منشور لينكدإن احترافي" },
+  { command: "youtube", description: "▶️ وصف فيديو يوتيوب + عنوان" },
+  { command: "blog", description: "📝 مقال مدونة SEO" },
+  { command: "press", description: "📰 بيان صحفي" },
+  { command: "contract", description: "📃 عقد أو اتفاقية بسيطة" },
+  { command: "apology", description: "🙏 رسالة اعتذار" },
+  { command: "thanks", description: "💐 رسالة شكر" },
+  { command: "invite", description: "🎉 صياغة دعوة" },
+  { command: "announce", description: "📢 إعلان رسمي" },
+  { command: "review", description: "⭐ مراجعة/تقييم منتج" },
+  { command: "faq", description: "❓ توليد أسئلة شائعة" },
+  { command: "outline", description: "🧭 مخطط موضوع" },
+  { command: "synonyms", description: "🔁 مرادفات كلمة" },
+  { command: "antonyms", description: "↔️ أضداد كلمة" },
+  { command: "define", description: "📖 تعريف مصطلح" },
+  { command: "geo", description: "🗺️ معلومات دولة/مدينة" },
+  { command: "history_of", description: "🏛️ نبذة تاريخية عن شيء" },
+  { command: "motivate", description: "🔥 رسالة تحفيزية" },
+  { command: "advice", description: "🤝 نصيحة شخصية" },
+  { command: "astro", description: "♌ برج اليوم" },
+  { command: "regex", description: "🧬 توليد تعبير Regex" },
+  { command: "cron", description: "⏰ توليد تعبير Cron" },
+  { command: "color", description: "🎨 اقتراح لوحة ألوان" },
+  { command: "roast", description: "🌶️ سخرية ودّية خفيفة" },
 ];
 
 // ==================== NETWORK / API TOOLS ====================
