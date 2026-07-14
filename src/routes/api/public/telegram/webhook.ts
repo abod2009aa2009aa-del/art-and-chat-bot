@@ -54,7 +54,7 @@ function baghdadNow(): { iso: string; human: string } {
 
 // ============ Persistent Memory (Lovable Cloud DB) ============
 // Conversation history is stored in `telegram_messages` table — never lost.
-const HISTORY_LIMIT = 500; // last N messages loaded per context for AI (نافذة سياق ضخمة)
+const HISTORY_LIMIT = 60; // نافذة السياق المُرسلة للـ AI — أصغر = أسرع (التخزين بالـ DB يبقى كامل)
 const LONG_TERM_SUMMARY_AFTER = 300; // إذا زادت الرسائل، نلخّص القديم كذاكرة طويلة المدى
 
 type Msg = { role: "user" | "assistant"; name?: string; content: string; ts: number };
