@@ -938,7 +938,7 @@ async function handleUpdate(update: any, token: string) {
       }
     }
 
-    // ===== Photo analysis (always answered) =====
+    // ===== Photo with caption/no caption → smart routing: EDIT vs ANALYZE =====
     if (msg.photo?.length) {
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
@@ -947,6 +947,31 @@ async function handleUpdate(update: any, token: string) {
         const img = await fetch(url);
         const buf = Buffer.from(await img.arrayBuffer());
         const dataUrl = `data:image/jpeg;base64,${buf.toString("base64")}`;
+
+        // Heuristic intent detection: does the caption ask to modify the image?
+        const editRe = /(عدّ?ل|غيّ?ر|بدّ?ل|أضف|اضف|احذف|شيل|ازالة|ازل|امسح|لو[نّ]|خلي(?:ه|ها)?|حو[لّ](?:ه|ها)?|اجعل|اقلب|ادمج|دمج|ركّب|رتوش|فلتر|خلفي[ةه]|edit|change|make(?:\s+it)?|remove|add|replace|swap|colou?rize|retouch|filter|background)\b/i;
+        const wantsEdit = !!text && editRe.test(text);
+
+        if (wantsEdit) {
+          try {
+            const png = await aiEditImage(dataUrl, text);
+            await stopTyping(token, chatId, typingId);
+            const form = new FormData();
+            form.append("chat_id", String(chatId));
+            form.append("caption", `✏️ تعديل: ${text.slice(0, 200)}`);
+            if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+            form.append("photo", new Blob([new Uint8Array(png)], { type: "image/png" }), "edited.png");
+            const res = await tgForm(token, "sendPhoto", form);
+            if (!res.ok) throw new Error(JSON.stringify(res));
+            await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[صورة + طلب تعديل] ${text}` });
+            await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[عدّلت الصورة وأرسلتها] ${text}` });
+            return;
+          } catch (editErr) {
+            // إذا فشل التعديل، حلل الصورة بدل ما نصمت
+            console.warn("[photo] edit failed, falling back to analyze:", (editErr as any)?.message);
+          }
+        }
+
         const prompt = text || "حلل هذي الصورة وقلي كل شي تشوفه بالتفصيل وبطريقة مسلية";
         const reply = await aiChat([
           { role: "system", content: systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName, userUsername }) },
@@ -962,8 +987,8 @@ async function handleUpdate(update: any, token: string) {
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         const fallback = isAiUnavailableError(e)
-          ? "صار ضغط مؤقت على تحليل الصور. الرسالة انحفظت بالذاكرة، جرّب بعد لحظات أو دز صورة أوضح."
-          : `خطأ بتحليل الصورة:\n${e?.message ?? e}`;
+          ? "صار ضغط مؤقت على معالجة الصور. جرّب بعد لحظات."
+          : `خطأ بمعالجة الصورة:\n${e?.message ?? e}`;
         await tg(token, "sendMessage", { chat_id: chatId, text: fallback, reply_to_message_id: msg.message_id });
       }
       return;
