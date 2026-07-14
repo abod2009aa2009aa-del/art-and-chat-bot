@@ -234,9 +234,9 @@ async function stopTyping(token: string, chatId: number, mid: number | null) {
 }
 
 // ============ AI Gateway ============
-// النموذج الافتراضي: Gemini 3 Flash (نافذة سياق كبيرة + استدلال قوي + متعدد الوسائط)
-const PRIMARY_CHAT_MODEL = "google/gemini-3-flash-preview";
-const CHEAP_CHAT_MODELS = [PRIMARY_CHAT_MODEL, "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite", "google/gemini-3.1-flash-lite"];
+// النموذج الافتراضي: أسرع نموذج Gemini للاستجابة الفورية
+const PRIMARY_CHAT_MODEL = "google/gemini-2.5-flash-lite";
+const CHEAP_CHAT_MODELS = [PRIMARY_CHAT_MODEL, "google/gemini-3.1-flash-lite", "google/gemini-2.5-flash", "google/gemini-3-flash-preview"];
 
 function isAiUnavailableError(error: unknown) {
   const msg = String((error as any)?.message ?? error ?? "");
