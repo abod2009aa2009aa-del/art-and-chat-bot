@@ -447,3 +447,70 @@ export async function runAiTool(
 }
 
 export const AI_TOOL_KEYS = Object.keys(AI_TOOLS);
+
+// ==================== PHOTO INTENT DETECTION ====================
+// يحدد إذا كان النص المرفق مع الصورة يطلب "تعديل الصورة" أو "تحليلها".
+// يعتمد على تسجيل نقاط (weighted scoring) بدل مطابقة كلمة واحدة، لمنع اللبس.
+export type PhotoIntent = {
+  intent: "edit" | "analyze";
+  score: number;      // موجب = تعديل، سالب/صفر = تحليل
+  reasons: string[];
+};
+
+const EDIT_SIGNALS: Array<[RegExp, number, string]> = [
+  // أفعال تعديل صريحة مرتبطة بالصورة
+  [/\b(عدّ?ل|تعديل)\b/u, 3, "فعل تعديل"],
+  [/(اجعل|خلّ?يها|خلّ?يه|حوّ?لها|حوّ?له|حوّ?ل\s+الصورة)/u, 3, "تحويل"],
+  [/\b(أضف|اضف|ضيف|زيد)\b/u, 2.5, "إضافة عنصر"],
+  [/\b(احذف|اح?ذفي|شيل|امسح|ازل|أزل|إزالة|ازالة)\b/u, 2.5, "حذف عنصر"],
+  [/(غيّ?ر|بدّ?ل|استبدل)/u, 2.5, "تغيير"],
+  [/(خلفي[ةه]|الخلفية)/u, 2, "خلفية"],
+  [/(لوّ?نها|لوّ?نه|بالأبيض والأسود|أبيض وأسود|ابيض واسود)/u, 2, "تلوين"],
+  [/(قصّ?|قص\s+الصورة|كروب|تكبير|تصغير|دقّ?ة أعلى|وضوح أعلى|حسّ?ن الصورة|رتوش|فلتر|ستايل|أنمي|انمي|كرتون|كارتون)/u, 2.5, "معالجة بصرية"],
+  [/(ارسم|أرسم|صمّ?م|اصنع منها|سوّ?يها|سويها)/u, 2, "إعادة إنشاء"],
+  // إنجليزي — حدود كلمات
+  [/\b(edit|retouch|restyle|inpaint|upscale|enhance|colou?rize|crop|resize|blur|erase)\b/i, 3, "edit verb"],
+  [/\b(remove|delete|add|replace|swap|change|turn\s+it\s+into|make\s+it|convert\s+it)\b/i, 2.5, "edit verb"],
+  [/\b(background|filter|style|anime|cartoon|sketch|watermark)\b/i, 1.5, "edit target"],
+];
+
+const ANALYZE_SIGNALS: Array<[RegExp, number, string]> = [
+  // أسئلة واستفهام
+  [/[؟?]/u, 2, "سؤال"],
+  [/(شنو|شني|شو|وش|ايش|إيش|ما\s+ه(?:ذا|ذه|و|ي)|منو|من\s+هو|ليش|ليه|لماذا|كيف|شلون|هل\b|وين|متى)/u, 2.5, "أداة استفهام"],
+  [/\b(what|why|how|who|where|when|which|is\s+this|can\s+you\s+tell)\b/i, 2.5, "question word"],
+  // طلبات فهم/تحليل
+  [/(حلّ?ل|تحليل|اشرح|شرح|فسّ?ر|تفسير|وصف|صف\s+|اقرأ|اقرا|استخرج|لخّ?ص|ترجم|ترجمة)/u, 3, "طلب تحليل"],
+  [/\b(analy[sz]e|explain|describe|read|extract|summari[sz]e|translate|ocr|identify|detect)\b/i, 3, "analysis verb"],
+  // أخطاء/مشاكل → تحليل غالباً
+  [/(خطأ|الخطا|ايرور|مشكلة|مشكله|ما\s+يشتغل|ميشتغل|لا\s+يعمل|شلون\s+أصلح|صلّ?ح\s+الكود)/u, 2.5, "مشكلة/خطأ"],
+  [/\b(error|bug|issue|not\s+working|fix\s+(?:the\s+)?(?:code|error))\b/i, 2.5, "error"],
+  // مقارنات/آراء
+  [/(رأيك|شرايك|شنو رايك|قيّ?م|تقييم)/u, 1.5, "طلب رأي"],
+];
+
+export function detectPhotoIntent(caption?: string | null): PhotoIntent {
+  const text = (caption ?? "").trim();
+  if (!text) return { intent: "analyze", score: 0, reasons: ["بدون نص → تحليل افتراضي"] };
+
+  let score = 0;
+  const reasons: string[] = [];
+
+  for (const [re, w, label] of EDIT_SIGNALS) {
+    if (re.test(text)) { score += w; reasons.push(`+${w} ${label}`); }
+  }
+  for (const [re, w, label] of ANALYZE_SIGNALS) {
+    if (re.test(text)) { score -= w; reasons.push(`-${w} ${label}`); }
+  }
+
+  // نفي صريح للتعديل
+  if (/(لا\s+تعدّ?ل|بدون\s+تعديل|don'?t\s+edit|do\s+not\s+edit|no\s+edit)/iu.test(text)) {
+    score -= 6; reasons.push("-6 نفي التعديل");
+  }
+  // أمر صريح جداً يرجّح التعديل مهما كان
+  if (/(عدّ?ل\s+(?:هالصورة|هذه\s+الصورة|الصورة|الصوره)|edit\s+(?:this\s+)?(?:image|photo|picture))/iu.test(text)) {
+    score += 4; reasons.push("+4 أمر تعديل صريح على الصورة");
+  }
+
+  return { intent: score > 0 ? "edit" : "analyze", score, reasons };
+}
