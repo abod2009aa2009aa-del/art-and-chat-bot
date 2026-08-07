@@ -948,9 +948,10 @@ async function handleUpdate(update: any, token: string) {
         const buf = Buffer.from(await img.arrayBuffer());
         const dataUrl = `data:image/jpeg;base64,${buf.toString("base64")}`;
 
-        // Heuristic intent detection: does the caption ask to modify the image?
-        const editRe = /(عدّ?ل|غيّ?ر|بدّ?ل|أضف|اضف|احذف|شيل|ازالة|ازل|امسح|لو[نّ]|خلي(?:ه|ها)?|حو[لّ](?:ه|ها)?|اجعل|اقلب|ادمج|دمج|ركّب|رتوش|فلتر|خلفي[ةه]|edit|change|make(?:\s+it)?|remove|add|replace|swap|colou?rize|retouch|filter|background)\b/i;
-        const wantsEdit = !!text && editRe.test(text);
+        // Weighted intent detection: تعديل vs تحليل (يمنع اللبس)
+        const intent = detectPhotoIntent(text);
+        const wantsEdit = intent.intent === "edit";
+        console.log("[photo] intent:", intent.intent, intent.score, intent.reasons.join(", "));
 
         if (wantsEdit) {
           try {
