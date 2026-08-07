@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   BOT_COMMANDS,
   AI_TOOL_KEYS,
@@ -35,7 +35,7 @@ describe("BOT_COMMANDS registry", () => {
 
 // ============ 2) كل أدوات الـ AI ترجع رد صحيح ============
 describe("AI tools — every registered tool returns a valid reply", () => {
-  const fakeAi = vi.fn(async (messages: any[]) => {
+  const fakeAi = async (messages: any[]) => {
     // تحقق من أن كل أداة تبني رسائل صالحة
     expect(Array.isArray(messages)).toBe(true);
     expect(messages).toHaveLength(2);
@@ -44,9 +44,7 @@ describe("AI tools — every registered tool returns a valid reply", () => {
     expect(messages[1].role).toBe("user");
     expect(String(messages[1].content).trim().length).toBeGreaterThan(0);
     return "رد تجريبي صالح";
-  });
-
-  beforeEach(() => fakeAi.mockClear());
+  };
 
   it("registers a healthy number of tools", () => {
     expect(AI_TOOL_KEYS.length).toBeGreaterThanOrEqual(60);
@@ -68,7 +66,7 @@ describe("AI tools — every registered tool returns a valid reply", () => {
   });
 
   it("falls back gracefully when the model returns nothing", async () => {
-    const empty = vi.fn(async () => "");
+    const empty = async () => "";
     const out = await runAiTool(AI_TOOL_KEYS[0], "x", empty);
     expect(out).toBe("ما كدرت أولّد رد.");
   });
