@@ -184,13 +184,13 @@ describe("detectPhotoIntent", () => {
     "شنو المشكلة هنا ما يشتغل",
   ];
 
-  it.each(editCases)("routes %j to edit", (t) => {
+  it.each(editCases)("routes %j to edit", (t: string) => {
     const r = detectPhotoIntent(t);
     expect(r.intent).toBe("edit");
     expect(r.score).toBeGreaterThan(0);
   });
 
-  it.each(analyzeCases)("routes %j to analyze", (t) => {
+  it.each(analyzeCases)("routes %j to analyze", (t: string) => {
     expect(detectPhotoIntent(t).intent).toBe("analyze");
   });
 
