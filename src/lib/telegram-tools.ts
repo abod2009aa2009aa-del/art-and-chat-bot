@@ -268,12 +268,12 @@ export function toolCalc(expr: string): string {
   const consts: Record<string, number> = { pi: Math.PI, PI: Math.PI, e: Math.E, E: Math.E };
   // Replace ^ with ** and names with Math.name or constants
   let js = src.replace(/\^/g, "**");
-  js = js.replace(/\b([a-zA-Z_]\w*)\b/g, (_, name) => {
-    if (allowed.includes(name)) return `Math.${name}`;
-    if (name in consts) return String(consts[name]);
-    throw new SyntaxError(`اسم غير مسموح: ${name}`);
-  });
   try {
+    js = js.replace(/\b([a-zA-Z_]\w*)\b/g, (_, name) => {
+      if (allowed.includes(name)) return `Math.${name}`;
+      if (name in consts) return String(consts[name]);
+      throw new SyntaxError(`اسم غير مسموح: ${name}`);
+    });
     // eslint-disable-next-line no-new-func
     const val = Function(`"use strict"; return (${js});`)();
     if (typeof val !== "number" || !isFinite(val)) return "النتيجة غير صالحة.";
@@ -459,10 +459,10 @@ export type PhotoIntent = {
 
 const EDIT_SIGNALS: Array<[RegExp, number, string]> = [
   // أفعال تعديل صريحة مرتبطة بالصورة
-  [/\b(عدّ?ل|تعديل)\b/u, 3, "فعل تعديل"],
+  [/(عدّ?ل|تعديل)/u, 3, "فعل تعديل"],
   [/(اجعل|خلّ?يها|خلّ?يه|حوّ?لها|حوّ?له|حوّ?ل\s+الصورة)/u, 3, "تحويل"],
-  [/\b(أضف|اضف|ضيف|زيد)\b/u, 2.5, "إضافة عنصر"],
-  [/\b(احذف|اح?ذفي|شيل|امسح|ازل|أزل|إزالة|ازالة)\b/u, 2.5, "حذف عنصر"],
+  [/(أضف|اضف|ضيف|زيد)/u, 2.5, "إضافة عنصر"],
+  [/(احذف|شيل|امسح|ازل|أزل|إزالة|ازالة)/u, 2.5, "حذف عنصر"],
   [/(غيّ?ر|بدّ?ل|استبدل)/u, 2.5, "تغيير"],
   [/(خلفي[ةه]|الخلفية)/u, 2, "خلفية"],
   [/(لوّ?نها|لوّ?نه|بالأبيض والأسود|أبيض وأسود|ابيض واسود)/u, 2, "تلوين"],
