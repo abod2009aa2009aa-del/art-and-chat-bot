@@ -5,7 +5,7 @@ import { unzipSync, strFromU8 } from "fflate";
 import {
   BOT_COMMANDS, AI_TOOL_KEYS, runAiTool,
   toolIp, toolDns, toolWhois, toolPingUrl, toolMeta, toolShort,
-  toolWeather, toolCurrency, toolCalc,
+  toolWeather, toolCurrency, toolCalc, detectPhotoIntent,
 } from "@/lib/telegram-tools";
 
 
