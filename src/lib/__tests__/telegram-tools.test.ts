@@ -53,7 +53,7 @@ describe("AI tools — every registered tool returns a valid reply", () => {
     expect(new Set(AI_TOOL_KEYS).size).toBe(AI_TOOL_KEYS.length);
   });
 
-  it.each(AI_TOOL_KEYS)("tool /%s works with an argument", async (key) => {
+  it.each(AI_TOOL_KEYS)("tool /%s works with an argument", async (key: string) => {
     const out = await runAiTool(key, "عينة اختبار: console.log('hi')", fakeAi);
     expect(typeof out).toBe("string");
     expect(out.length).toBeGreaterThan(0);
@@ -61,7 +61,7 @@ describe("AI tools — every registered tool returns a valid reply", () => {
     expect(out).not.toMatch(/ما كدرت أولّد رد/);
   });
 
-  it.each(AI_TOOL_KEYS)("tool /%s survives an empty argument", async (key) => {
+  it.each(AI_TOOL_KEYS)("tool /%s survives an empty argument", async (key: string) => {
     const out = await runAiTool(key, "", fakeAi);
     expect(typeof out).toBe("string");
     expect(out.length).toBeGreaterThan(0);
