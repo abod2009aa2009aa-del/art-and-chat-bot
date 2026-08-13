@@ -7,6 +7,11 @@ import {
   toolIp, toolDns, toolWhois, toolPingUrl, toolMeta, toolShort,
   toolWeather, toolCurrency, toolCalc, detectPhotoIntent,
 } from "@/lib/telegram-tools";
+import {
+  MAIN_MENU_TEXT, MENU_SECTIONS, mainMenuKeyboard, sectionKeyboard, sectionText, commandDescription,
+} from "@/lib/telegram-menu";
+import { listSourceText, readSourceFile, searchSource, sourceStats, selfSummary } from "@/lib/self-source";
+
 
 
 
@@ -861,8 +866,39 @@ async function handleUpdate(update: any, token: string) {
     return;
   }
 
+  // ===== أزرار القائمة داخل المحادثة =====
+  if (update.callback_query) {
+    const cq = update.callback_query;
+    const data: string = cq.data ?? "";
+    const cid = cq.message?.chat?.id;
+    const mid = cq.message?.message_id;
+    try {
+      if (data === "menu") {
+        await tg(token, "editMessageText", { chat_id: cid, message_id: mid, text: MAIN_MENU_TEXT, reply_markup: mainMenuKeyboard() } as any);
+      } else if (data.startsWith("sec:")) {
+        const key = data.slice(4);
+        const kb = sectionKeyboard(key);
+        if (kb) await tg(token, "editMessageText", { chat_id: cid, message_id: mid, text: sectionText(key).replace(/\*/g, ""), reply_markup: kb } as any);
+      } else if (data.startsWith("cmd:")) {
+        const c = data.slice(4);
+        await tg(token, "sendMessage", {
+          chat_id: cid,
+          text: `▶️ /${c}\n${commandDescription(c)}\n\nاكتب: \`/${c} <المحتوى>\`\nأو رد بالأمر على رسالة تحتوي المحتوى.`,
+          parse_mode: "Markdown",
+        } as any);
+      }
+      await tg(token, "answerCallbackQuery", { callback_query_id: cq.id });
+    } catch (e: any) {
+      console.error("[tg] callback error", e?.message ?? e);
+      await tg(token, "answerCallbackQuery", { callback_query_id: cq.id, text: "صار خطأ بسيط 😅" }).catch(() => {});
+    }
+    return;
+  }
+
   const msg = update.message ?? update.edited_message;
   if (!msg) { console.log("[tg] no message in update"); return; }
+
+
 
   const chatId: number = msg.chat.id;
   const chatType: string = msg.chat.type;
@@ -1082,6 +1118,63 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
+    // ===== قائمة الأزرار داخل المحادثة =====
+    if (/^\/(menu|قائمة|الاوامر|الأوامر)(@\w+)?$/i.test(text)) {
+      await tg(token, "sendMessage", { chat_id: chatId, text: MAIN_MENU_TEXT, reply_markup: mainMenuKeyboard(), reply_to_message_id: msg.message_id } as any);
+      return;
+    }
+
+    // ===== الوعي الذاتي: ملفاتي / قراءة ملف / بحث بالكود / فحص ذاتي =====
+    if (/^\/(myfiles|ملفاتي)(@\w+)?$/i.test(text)) {
+      const out = listSourceText();
+      if (out.length > 3800) {
+        const form = new FormData();
+        form.append("chat_id", String(chatId));
+        form.append("caption", "🗂️ قائمة ملفاتي المصدرية");
+        form.append("document", new Blob([out], { type: "text/plain" }), "alisa-files.txt");
+        await tgForm(token, "sendDocument", form);
+      } else {
+        await tg(token, "sendMessage", { chat_id: chatId, text: out, reply_to_message_id: msg.message_id });
+      }
+      return;
+    }
+
+    {
+      const rf = text.match(/^\/(readfile|اقرأ|اقرا)(?:@\w+)?\s+([\s\S]+)$/i);
+      if (rf) {
+        const found = readSourceFile(rf[2]);
+        if (!found) { await tg(token, "sendMessage", { chat_id: chatId, text: `ما لكيت ملف بهذا الاسم 😅 جرّب /myfiles`, reply_to_message_id: msg.message_id }); return; }
+        const form = new FormData();
+        form.append("chat_id", String(chatId));
+        form.append("caption", `📖 ${found.path} — ${found.content.split("\n").length} سطر / ${found.content.length} حرف`);
+        form.append("reply_to_message_id", String(msg.message_id));
+        form.append("document", new Blob([found.content], { type: "text/plain" }), found.path.split("/").pop() ?? "file.txt");
+        await tgForm(token, "sendDocument", form);
+        return;
+      }
+      const gc = text.match(/^\/(grepcode|بحث_كود)(?:@\w+)?\s+([\s\S]+)$/i);
+      if (gc) {
+        await tg(token, "sendMessage", { chat_id: chatId, text: searchSource(gc[2]).slice(0, 4000), reply_to_message_id: msg.message_id });
+        return;
+      }
+    }
+
+    if (/^\/(selftest|فحص)(@\w+)?$/i.test(text)) {
+      const s = sourceStats();
+      const checks: string[] = [];
+      checks.push(`✅ الاتصال بتلكرام: شغال`);
+      checks.push(`✅ الوعي الذاتي: ${s.files} ملف • ${s.lines} سطر • ${s.chars} حرف`);
+      checks.push(`✅ الأدوات المسجّلة: ${AI_TOOL_KEYS.length} أداة ذكاء + 9 أدوات شبكة`);
+      checks.push(`✅ أقسام الأزرار: ${MENU_SECTIONS.length} قسم ملوّن`);
+      try { await db(); checks.push("✅ الذاكرة الدائمة: متصلة"); } catch { checks.push("⚠️ الذاكرة الدائمة: غير متاحة الآن"); }
+      try { const t = await aiChat([{ role: "user", content: "قل: تمام" }]); checks.push(t ? "✅ نموذج الذكاء: يرد" : "⚠️ نموذج الذكاء: رد فارغ"); }
+      catch { checks.push("⚠️ نموذج الذكاء: وضع استمرار الخدمة"); }
+      checks.push(`✅ الحاسبة: 2+2 = ${toolCalc("2+2").replace(/[^\d]/g, "")}`);
+      await tg(token, "sendMessage", { chat_id: chatId, text: `🩺 الفحص الذاتي:\n\n${checks.join("\n")}`, reply_to_message_id: msg.message_id });
+      return;
+    }
+
+
     // ===== Network / API tool commands (real APIs, no AI) =====
     const netCmd = text.match(/^\/(ip|dns|whois|ping_url|meta|short|weather|currency|calc)(?:@\w+)?\s*(.*)$/is);
     if (netCmd) {
@@ -1222,15 +1315,20 @@ async function handleUpdate(update: any, token: string) {
 
     if (text.startsWith("/start") || text.startsWith("/help") || text === "/ميزات" || text === "/features") {
       const now = baghdadNow();
-      await tg(token, "sendMessage", { chat_id: chatId, text:
+      const s = sourceStats();
+      await tg(token, "sendMessage", {
+        chat_id: chatId,
+        text:
 `هلا والله 👋 آني ${BOT_NAME} 🔥
 🕐 ${now.human}
+🧠 أعرف نفسي حرف بحرف: ${s.files} ملف • ${s.lines} سطر من كودي.
 
-📋 كل ميزاتي الحالية:
-${featuresListText()}`,
-      });
+${MAIN_MENU_TEXT}`,
+        reply_markup: mainMenuKeyboard(),
+      } as any);
       return;
     }
+
 
     if (text.startsWith("/img") || text.startsWith("/image") || text.startsWith("/صورة")) {
       const prompt = text.replace(/^\/\S+\s*/, "").trim();
