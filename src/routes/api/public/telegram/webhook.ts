@@ -866,8 +866,39 @@ async function handleUpdate(update: any, token: string) {
     return;
   }
 
+  // ===== أزرار القائمة داخل المحادثة =====
+  if (update.callback_query) {
+    const cq = update.callback_query;
+    const data: string = cq.data ?? "";
+    const cid = cq.message?.chat?.id;
+    const mid = cq.message?.message_id;
+    try {
+      if (data === "menu") {
+        await tg(token, "editMessageText", { chat_id: cid, message_id: mid, text: MAIN_MENU_TEXT, reply_markup: mainMenuKeyboard() } as any);
+      } else if (data.startsWith("sec:")) {
+        const key = data.slice(4);
+        const kb = sectionKeyboard(key);
+        if (kb) await tg(token, "editMessageText", { chat_id: cid, message_id: mid, text: sectionText(key).replace(/\*/g, ""), reply_markup: kb } as any);
+      } else if (data.startsWith("cmd:")) {
+        const c = data.slice(4);
+        await tg(token, "sendMessage", {
+          chat_id: cid,
+          text: `▶️ /${c}\n${commandDescription(c)}\n\nاكتب: \`/${c} <المحتوى>\`\nأو رد بالأمر على رسالة تحتوي المحتوى.`,
+          parse_mode: "Markdown",
+        } as any);
+      }
+      await tg(token, "answerCallbackQuery", { callback_query_id: cq.id });
+    } catch (e: any) {
+      console.error("[tg] callback error", e?.message ?? e);
+      await tg(token, "answerCallbackQuery", { callback_query_id: cq.id, text: "صار خطأ بسيط 😅" }).catch(() => {});
+    }
+    return;
+  }
+
   const msg = update.message ?? update.edited_message;
   if (!msg) { console.log("[tg] no message in update"); return; }
+
+
 
   const chatId: number = msg.chat.id;
   const chatType: string = msg.chat.type;
