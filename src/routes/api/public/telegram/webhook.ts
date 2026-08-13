@@ -7,6 +7,11 @@ import {
   toolIp, toolDns, toolWhois, toolPingUrl, toolMeta, toolShort,
   toolWeather, toolCurrency, toolCalc, detectPhotoIntent,
 } from "@/lib/telegram-tools";
+import {
+  MAIN_MENU_TEXT, MENU_SECTIONS, mainMenuKeyboard, sectionKeyboard, sectionText, commandDescription,
+} from "@/lib/telegram-menu";
+import { listSourceText, readSourceFile, searchSource, sourceStats, selfSummary } from "@/lib/self-source";
+
 
 
 
