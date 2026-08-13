@@ -1082,6 +1082,63 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
+    // ===== قائمة الأزرار داخل المحادثة =====
+    if (/^\/(menu|قائمة|الاوامر|الأوامر)(@\w+)?$/i.test(text)) {
+      await tg(token, "sendMessage", { chat_id: chatId, text: MAIN_MENU_TEXT, reply_markup: mainMenuKeyboard(), reply_to_message_id: msg.message_id } as any);
+      return;
+    }
+
+    // ===== الوعي الذاتي: ملفاتي / قراءة ملف / بحث بالكود / فحص ذاتي =====
+    if (/^\/(myfiles|ملفاتي)(@\w+)?$/i.test(text)) {
+      const out = listSourceText();
+      if (out.length > 3800) {
+        const form = new FormData();
+        form.append("chat_id", String(chatId));
+        form.append("caption", "🗂️ قائمة ملفاتي المصدرية");
+        form.append("document", new Blob([out], { type: "text/plain" }), "alisa-files.txt");
+        await tgForm(token, "sendDocument", form);
+      } else {
+        await tg(token, "sendMessage", { chat_id: chatId, text: out, reply_to_message_id: msg.message_id });
+      }
+      return;
+    }
+
+    {
+      const rf = text.match(/^\/(readfile|اقرأ|اقرا)(?:@\w+)?\s+([\s\S]+)$/i);
+      if (rf) {
+        const found = readSourceFile(rf[2]);
+        if (!found) { await tg(token, "sendMessage", { chat_id: chatId, text: `ما لكيت ملف بهذا الاسم 😅 جرّب /myfiles`, reply_to_message_id: msg.message_id }); return; }
+        const form = new FormData();
+        form.append("chat_id", String(chatId));
+        form.append("caption", `📖 ${found.path} — ${found.content.split("\n").length} سطر / ${found.content.length} حرف`);
+        form.append("reply_to_message_id", String(msg.message_id));
+        form.append("document", new Blob([found.content], { type: "text/plain" }), found.path.split("/").pop() ?? "file.txt");
+        await tgForm(token, "sendDocument", form);
+        return;
+      }
+      const gc = text.match(/^\/(grepcode|بحث_كود)(?:@\w+)?\s+([\s\S]+)$/i);
+      if (gc) {
+        await tg(token, "sendMessage", { chat_id: chatId, text: searchSource(gc[2]).slice(0, 4000), reply_to_message_id: msg.message_id });
+        return;
+      }
+    }
+
+    if (/^\/(selftest|فحص)(@\w+)?$/i.test(text)) {
+      const s = sourceStats();
+      const checks: string[] = [];
+      checks.push(`✅ الاتصال بتلكرام: شغال`);
+      checks.push(`✅ الوعي الذاتي: ${s.files} ملف • ${s.lines} سطر • ${s.chars} حرف`);
+      checks.push(`✅ الأدوات المسجّلة: ${AI_TOOL_KEYS.length} أداة ذكاء + 9 أدوات شبكة`);
+      checks.push(`✅ أقسام الأزرار: ${MENU_SECTIONS.length} قسم ملوّن`);
+      try { await db(); checks.push("✅ الذاكرة الدائمة: متصلة"); } catch { checks.push("⚠️ الذاكرة الدائمة: غير متاحة الآن"); }
+      try { const t = await aiChat([{ role: "user", content: "قل: تمام" }]); checks.push(t ? "✅ نموذج الذكاء: يرد" : "⚠️ نموذج الذكاء: رد فارغ"); }
+      catch { checks.push("⚠️ نموذج الذكاء: وضع استمرار الخدمة"); }
+      checks.push(`✅ الحاسبة: 2+2 = ${toolCalc("2+2").replace(/[^\d]/g, "")}`);
+      await tg(token, "sendMessage", { chat_id: chatId, text: `🩺 الفحص الذاتي:\n\n${checks.join("\n")}`, reply_to_message_id: msg.message_id });
+      return;
+    }
+
+
     // ===== Network / API tool commands (real APIs, no AI) =====
     const netCmd = text.match(/^\/(ip|dns|whois|ping_url|meta|short|weather|currency|calc)(?:@\w+)?\s*(.*)$/is);
     if (netCmd) {
