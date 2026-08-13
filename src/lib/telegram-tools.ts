@@ -83,7 +83,25 @@ export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "cron", description: "⏰ توليد تعبير Cron" },
   { command: "color", description: "🎨 اقتراح لوحة ألوان" },
   { command: "roast", description: "🌶️ سخرية ودّية خفيفة" },
+  // ==== وعي ذاتي + مشاعر + إبداع ====
+  { command: "menu", description: "🎛️ قائمة الأزرار داخل المحادثة" },
+  { command: "myfiles", description: "🗂️ عرض ملفات أليسا المصدرية" },
+  { command: "readfile", description: "📖 قراءة ملف من مصدر أليسا" },
+  { command: "grepcode", description: "🔎 بحث داخل كود أليسا" },
+  { command: "selftest", description: "🩺 فحص ذاتي لكل الميزات" },
+  { command: "emotion", description: "❤️ تحليل عميق للمشاعر" },
+  { command: "sarcasm", description: "😏 كشف السخرية والتهكم" },
+  { command: "intent", description: "🎯 استخراج النية الحقيقية" },
+  { command: "tone", description: "🎚️ تحليل النبرة وإعادة صياغتها" },
+  { command: "empathy", description: "🫶 رد متعاطف إنساني" },
+  { command: "creative", description: "🎭 نص إبداعي بأسلوب فني" },
+  { command: "lyrics", description: "🎵 كلمات أغنية" },
+  { command: "script", description: "🎬 سيناريو مشهد" },
+  { command: "imagine", description: "🖼️ برومبت احترافي لتوليد صورة" },
+  { command: "memoryplan", description: "🧠 تنظيم الذاكرة ببطاقات" },
+  { command: "apiplan", description: "🔌 خطة تكامل API + كود" },
 ];
+
 
 // ==================== NETWORK / API TOOLS ====================
 async function tryFetchJson(url: string, timeoutMs = 8000): Promise<any> {
