@@ -1315,15 +1315,20 @@ async function handleUpdate(update: any, token: string) {
 
     if (text.startsWith("/start") || text.startsWith("/help") || text === "/ميزات" || text === "/features") {
       const now = baghdadNow();
-      await tg(token, "sendMessage", { chat_id: chatId, text:
+      const s = sourceStats();
+      await tg(token, "sendMessage", {
+        chat_id: chatId,
+        text:
 `هلا والله 👋 آني ${BOT_NAME} 🔥
 🕐 ${now.human}
+🧠 أعرف نفسي حرف بحرف: ${s.files} ملف • ${s.lines} سطر من كودي.
 
-📋 كل ميزاتي الحالية:
-${featuresListText()}`,
-      });
+${MAIN_MENU_TEXT}`,
+        reply_markup: mainMenuKeyboard(),
+      } as any);
       return;
     }
+
 
     if (text.startsWith("/img") || text.startsWith("/image") || text.startsWith("/صورة")) {
       const prompt = text.replace(/^\/\S+\s*/, "").trim();
