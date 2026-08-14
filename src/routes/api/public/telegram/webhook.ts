@@ -1399,26 +1399,83 @@ ${MAIN_MENU_TEXT}`,
       return;
     }
 
-    // /ban /mute (group admin only — bot must be admin)
-    if ((text.startsWith("/ban") || text.startsWith("/mute") || text.startsWith("/kick")) && isGroup) {
-      if (!msg.reply_to_message) { await tg(token, "sendMessage", { chat_id: chatId, text: "استخدم الأمر رداً على رسالة العضو 🎯" }); return; }
-      if (!(await isAdmin(token, chatId, userId))) { await tg(token, "sendMessage", { chat_id: chatId, text: "هذا الأمر للمشرفين فقط 🛡️" }); return; }
-      const target = msg.reply_to_message.from?.id;
-      const targetName = msg.reply_to_message.from?.first_name ?? "العضو";
-      if (!target) return;
-      if (text.startsWith("/ban") || text.startsWith("/kick")) {
-        const r: any = await tg(token, "banChatMember", { chat_id: chatId, user_id: target });
-        await tg(token, "sendMessage", { chat_id: chatId, text: r.ok ? `🔨 تم طرد ${targetName}` : `فشل: ${r.description}` });
-      } else {
-        const mins = parseInt(text.split(/\s+/)[1] ?? "10", 10) || 10;
-        const until = Math.floor(Date.now() / 1000) + mins * 60;
-        const r: any = await tg(token, "restrictChatMember", {
-          chat_id: chatId, user_id: target, until_date: until,
-          permissions: { can_send_messages: false, can_send_audios: false, can_send_documents: false, can_send_photos: false, can_send_videos: false, can_send_polls: false, can_send_other_messages: false },
-        });
-        await tg(token, "sendMessage", { chat_id: chatId, text: r.ok ? `🔇 تم كتم ${targetName} لمدة ${mins} دقيقة` : `فشل: ${r.description}` });
+    // ===== إشراف حقيقي: طرد / حظر / كتم / فك الكتم (عربي + إنجليزي) =====
+    {
+      const modCmd = text.match(
+        /^\/(ban|kick|mute|unban|unmute|حظر|طرد|اطرد|كتم|اكتم|فك_الكتم|الغاء_الكتم|رفع_الحظر)(?:@\w+)?\s*(.*)$/is,
+      );
+      if (modCmd && isGroup) {
+        const raw = modCmd[1].toLowerCase();
+        const arg = (modCmd[2] || "").trim();
+        const kind: "ban" | "kick" | "mute" | "unban" | "unmute" =
+          /^(ban|حظر)$/.test(raw) ? "ban"
+          : /^(kick|طرد|اطرد)$/.test(raw) ? "kick"
+          : /^(mute|كتم|اكتم)$/.test(raw) ? "mute"
+          : /^(unban|رفع_الحظر)$/.test(raw) ? "unban"
+          : "unmute";
+
+        // صلاحية المستخدم
+        if (!(await isAdmin(token, chatId, userId))) {
+          await tg(token, "sendMessage", { chat_id: chatId, text: "هذا الأمر للمشرفين فقط 🛡️", reply_to_message_id: msg.message_id });
+          return;
+        }
+        // صلاحية البوت نفسه
+        const me: any = bot?.id ? await tg(token, "getChatMember", { chat_id: chatId, user_id: bot.id }) : { ok: false };
+        const meOk = me?.ok && me.result?.status === "administrator" && me.result?.can_restrict_members;
+        if (!meOk) {
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: "ما عندي صلاحية 😅 خلّيني مشرف بالمجموعة وفعّل «حظر المستخدمين» وبعدها أنفّذ فوراً.",
+            reply_to_message_id: msg.message_id,
+          });
+          return;
+        }
+
+        // الهدف: رد على رسالة أو @username أو ID
+        let target: number | undefined = msg.reply_to_message?.from?.id;
+        let targetName: string = msg.reply_to_message?.from?.first_name ?? "العضو";
+        if (!target && arg) {
+          const idm = arg.match(/(\d{5,})/);
+          if (idm) { target = Number(idm[1]); targetName = idm[1]; }
+        }
+        if (!target) {
+          await tg(token, "sendMessage", { chat_id: chatId, text: "رد بالأمر على رسالة العضو، أو اكتب الآيدي: `/طرد 123456789`", parse_mode: "Markdown", reply_to_message_id: msg.message_id } as any);
+          return;
+        }
+        if (target === bot?.id) { await tg(token, "sendMessage", { chat_id: chatId, text: "ما راح أطرد نفسي 😂" }); return; }
+        if (await isAdmin(token, chatId, target)) {
+          await tg(token, "sendMessage", { chat_id: chatId, text: "ما أكدر أطرد مشرف مثلي 🤝", reply_to_message_id: msg.message_id });
+          return;
+        }
+
+        let r: any, okText = "";
+        if (kind === "kick") {
+          r = await tg(token, "banChatMember", { chat_id: chatId, user_id: target });
+          if (r?.ok) await tg(token, "unbanChatMember", { chat_id: chatId, user_id: target, only_if_banned: true }).catch(() => {});
+          okText = `👢 تم طرد ${targetName} (يقدر يرجع بدعوة)`;
+        } else if (kind === "ban") {
+          r = await tg(token, "banChatMember", { chat_id: chatId, user_id: target });
+          okText = `🔨 تم حظر ${targetName} نهائياً`;
+        } else if (kind === "mute") {
+          const mins = parseInt(arg.match(/\d{1,4}/)?.[0] ?? "10", 10) || 10;
+          r = await tg(token, "restrictChatMember", {
+            chat_id: chatId, user_id: target, until_date: Math.floor(Date.now() / 1000) + mins * 60,
+            permissions: { can_send_messages: false, can_send_audios: false, can_send_documents: false, can_send_photos: false, can_send_videos: false, can_send_video_notes: false, can_send_voice_notes: false, can_send_polls: false, can_send_other_messages: false, can_add_web_page_previews: false },
+          });
+          okText = `🔇 تم كتم ${targetName} لمدة ${mins} دقيقة`;
+        } else if (kind === "unban") {
+          r = await tg(token, "unbanChatMember", { chat_id: chatId, user_id: target, only_if_banned: true });
+          okText = `♻️ تم رفع الحظر عن ${targetName}`;
+        } else {
+          r = await tg(token, "restrictChatMember", {
+            chat_id: chatId, user_id: target,
+            permissions: { can_send_messages: true, can_send_audios: true, can_send_documents: true, can_send_photos: true, can_send_videos: true, can_send_video_notes: true, can_send_voice_notes: true, can_send_polls: true, can_send_other_messages: true, can_add_web_page_previews: true },
+          });
+          okText = `🔊 تم فك الكتم عن ${targetName}`;
+        }
+        await tg(token, "sendMessage", { chat_id: chatId, text: r?.ok ? okText : `ما زبطت 😕 السبب: ${r?.description ?? "غير معروف"}`, reply_to_message_id: msg.message_id });
+        return;
       }
-      return;
     }
 
     // ===== Decide whether to reply in groups =====
