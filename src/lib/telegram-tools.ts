@@ -10,6 +10,12 @@ export type AiChat = (messages: any[], model?: string) => Promise<string>;
 export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "start", description: "بدء التشغيل + قائمة الميزات" },
   { command: "help", description: "المساعدة والميزات المتاحة" },
+  { command: "stats", description: "📊 إحصائيات كودي وعدد الأسطر" },
+  { command: "kick", description: "👢 طرد عضو (رد على رسالته)" },
+  { command: "ban", description: "🔨 حظر عضو نهائياً" },
+  { command: "mute", description: "🔇 كتم عضو لعدد دقائق" },
+  { command: "unmute", description: "🔊 فك الكتم عن عضو" },
+  { command: "unban", description: "♻️ رفع الحظر عن عضو" },
   { command: "ping", description: "اختبار اتصال البوت" },
   { command: "img", description: "🎨 توليد صورة من وصف نصي" },
   { command: "edit", description: "✏️ تعديل ملف (استخدمه كابشن للملف)" },
