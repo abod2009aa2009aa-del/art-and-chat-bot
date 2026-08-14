@@ -10,43 +10,43 @@ export type MenuSection = {
 
 export const MENU_SECTIONS: MenuSection[] = [
   {
-    key: "core", color: "🔵", title: "الأساسيات",
+    key: "core", color: "🔴", title: "الأساسيات",
     commands: ["start", "help", "ping", "menu", "search", "selftest"],
   },
   {
-    key: "media", color: "🟣", title: "الصور والوسائط",
+    key: "media", color: "🟢", title: "الصور والوسائط",
     commands: ["img", "imagine", "code", "color", "caption_ig"],
   },
   {
-    key: "files", color: "🟢", title: "الملفات",
+    key: "files", color: "🔴", title: "الملفات",
     commands: ["file", "edit", "readfile", "myfiles", "grepcode", "summarize"],
   },
   {
-    key: "dev", color: "🟠", title: "المبرمج",
+    key: "dev", color: "🟢", title: "المبرمج",
     commands: ["explain", "debug", "optimize", "doc", "sql", "json2sql", "tests", "regex", "cron", "apiplan"],
   },
   {
-    key: "net", color: "🟡", title: "الشبكة والأدوات",
+    key: "net", color: "🔴", title: "الشبكة والأدوات",
     commands: ["ip", "dns", "whois", "ping_url", "meta", "short", "weather", "currency", "calc"],
   },
   {
-    key: "mind", color: "🔴", title: "المشاعر والنوايا",
+    key: "mind", color: "🟢", title: "المشاعر والنوايا",
     commands: ["emotion", "sarcasm", "intent", "tone", "empathy", "sentiment", "memoryplan"],
   },
   {
-    key: "create", color: "🟤", title: "الإبداع",
+    key: "create", color: "🔴", title: "الإبداع",
     commands: ["creative", "poem", "story2", "lyrics", "script", "dream", "joke", "quote", "roast"],
   },
   {
-    key: "work", color: "⚪", title: "العمل والحياة",
+    key: "work", color: "🟢", title: "العمل والحياة",
     commands: ["cv", "cover", "interview", "plan", "pitch", "study", "workout", "diet", "tasks", "email"],
   },
   {
-    key: "text", color: "🩵", title: "النصوص واللغة",
+    key: "text", color: "🔵", title: "النصوص واللغة",
     commands: ["translate", "rewrite", "grammar", "simplify", "compare", "keywords", "ideas", "define", "synonyms"],
   },
   {
-    key: "social", color: "🩷", title: "السوشيال ميديا",
+    key: "social", color: "🔵", title: "السوشيال ميديا",
     commands: ["hashtags", "tweet", "linkedin", "youtube", "blog", "press", "slogan", "announce", "invite"],
   },
 ];
@@ -69,6 +69,8 @@ export function mainMenuKeyboard(): InlineKeyboard {
       })),
     );
   }
+  rows.push([{ text: "📊 إحصائيات كودي", callback_data: "cmd:stats" }]);
+  rows.push([{ text: "🩺 فحص ذاتي شامل", callback_data: "cmd:selftest" }]);
   return { inline_keyboard: rows };
 }
 
