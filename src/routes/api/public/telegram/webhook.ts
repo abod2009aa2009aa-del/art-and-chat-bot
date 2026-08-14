@@ -10,7 +10,7 @@ import {
 import {
   MAIN_MENU_TEXT, MENU_SECTIONS, mainMenuKeyboard, sectionKeyboard, sectionText, commandDescription,
 } from "@/lib/telegram-menu";
-import { listSourceText, readSourceFile, searchSource, sourceStats, selfSummary } from "@/lib/self-source";
+import { listSourceText, readSourceFile, searchSource, sourceStats, sourcePaths, selfSummary } from "@/lib/self-source";
 
 
 
@@ -881,6 +881,11 @@ async function handleUpdate(update: any, token: string) {
         if (kb) await tg(token, "editMessageText", { chat_id: cid, message_id: mid, text: sectionText(key).replace(/\*/g, ""), reply_markup: kb } as any);
       } else if (data.startsWith("cmd:")) {
         const c = data.slice(4);
+        if (c === "stats" || c === "selftest") {
+          await tg(token, "answerCallbackQuery", { callback_query_id: cq.id });
+          await handleUpdate({ message: { ...cq.message, from: cq.from, text: `/${c}` } }, token);
+          return;
+        }
         await tg(token, "sendMessage", {
           chat_id: cid,
           text: `▶️ /${c}\n${commandDescription(c)}\n\nاكتب: \`/${c} <المحتوى>\`\nأو رد بالأمر على رسالة تحتوي المحتوى.`,
@@ -1157,6 +1162,20 @@ async function handleUpdate(update: any, token: string) {
         await tg(token, "sendMessage", { chat_id: chatId, text: searchSource(gc[2]).slice(0, 4000), reply_to_message_id: msg.message_id });
         return;
       }
+    }
+
+    if (/^\/(stats|احصائيات|إحصائيات|سطور)(@\w+)?$/i.test(text)) {
+      const s = sourceStats();
+      const top = sourcePaths()
+        .map((p) => ({ p, n: (readSourceFile(p)?.content.split("\n").length ?? 0) }))
+        .sort((a, b) => b.n - a.n).slice(0, 10)
+        .map((x, i) => `${i + 1}. ${x.p} — ${x.n} سطر`).join("\n");
+      await tg(token, "sendMessage", {
+        chat_id: chatId,
+        text: `📊 إحصائيات كودي:\n\n• الملفات: ${s.files}\n• أسطر البرمجة: ${s.lines}\n• الأحرف: ${s.chars}\n• أدوات الذكاء: ${AI_TOOL_KEYS.length}\n• أقسام القائمة: ${MENU_SECTIONS.length}\n\n🔝 أكبر ملفاتي:\n${top}`,
+        reply_to_message_id: msg.message_id,
+      });
+      return;
     }
 
     if (/^\/(selftest|فحص)(@\w+)?$/i.test(text)) {
