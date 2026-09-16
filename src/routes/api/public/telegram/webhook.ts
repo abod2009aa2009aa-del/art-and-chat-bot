@@ -1617,7 +1617,7 @@ ${MAIN_MENU_TEXT}`,
           form.append("chat_id", String(chatId));
           form.append("caption", `📦 ${d.name}`);
           if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
-          form.append("document", new Blob([d.buffer], { type: mimeFor(d.name) }), d.name);
+          form.append("document", new Blob([new Uint8Array(d.buffer)], { type: mimeFor(d.name) }), d.name);
           await tgForm(token, "sendDocument", form);
         }
       } else {
