@@ -5,6 +5,7 @@
 
 import { zipSync, strToU8 } from "fflate";
 import * as store from "./store.server";
+import { checkScope, scopeConfigSummary } from "./scope-guard.server";
 
 export type ToolContext = {
   ownerId: number;
@@ -50,17 +51,24 @@ async function needProject(ctx: ToolContext): Promise<string> {
 
 // ---------------- Web research ----------------
 
-export async function webSearch(query: string): Promise<Array<{ title: string; url: string; snippet: string }>> {
+export async function webSearch(
+  query: string,
+): Promise<Array<{ title: string; url: string; snippet: string }>> {
   const out: Array<{ title: string; url: string; snippet: string }> = [];
   try {
-    const r = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`, {
-      headers: { "User-Agent": "AlyssaCyber/1.0" },
-    });
+    const r = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`,
+      {
+        headers: { "User-Agent": "AlyssaCyber/1.0" },
+      },
+    );
     if (r.ok) {
       const d: any = await r.json();
-      if (d.AbstractText) out.push({ title: d.Heading || query, url: d.AbstractURL || "", snippet: d.AbstractText });
+      if (d.AbstractText)
+        out.push({ title: d.Heading || query, url: d.AbstractURL || "", snippet: d.AbstractText });
       for (const t of (d.RelatedTopics ?? []).slice(0, 8)) {
-        if (t.Text && t.FirstURL) out.push({ title: t.Text.split(" - ")[0], url: t.FirstURL, snippet: t.Text });
+        if (t.Text && t.FirstURL)
+          out.push({ title: t.Text.split(" - ")[0], url: t.FirstURL, snippet: t.Text });
       }
     }
   } catch (e) {
@@ -100,7 +108,10 @@ async function openUrl(url: string, maxChars = 6000) {
 
 // ---------------- Static Python analysis (real, not simulated) ----------------
 
-export function lintPython(source: string): { issues: Array<{ line: number; level: string; msg: string }>; summary: string } {
+export function lintPython(source: string): {
+  issues: Array<{ line: number; level: string; msg: string }>;
+  summary: string;
+} {
   const issues: Array<{ line: number; level: string; msg: string }> = [];
   const lines = source.split("\n");
   const stack: Array<{ ch: string; line: number }> = [];
@@ -117,28 +128,47 @@ export function lintPython(source: string): { issues: Array<{ line: number; leve
       else if (inTriple === t) inTriple = null;
     }
     if (inTriple) return;
-    line = line.replace(/#.*$/, "").replace(/"(?:[^"\\]|\\.)*"/g, '""').replace(/'(?:[^'\\]|\\.)*'/g, "''");
+    line = line
+      .replace(/#.*$/, "")
+      .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+      .replace(/'(?:[^'\\]|\\.)*'/g, "''");
 
     for (const ch of line) {
       if ("([{".includes(ch)) stack.push({ ch, line: n });
       else if (")]}".includes(ch)) {
         const top = stack.pop();
-        if (!top || top.ch !== pairs[ch]) issues.push({ line: n, level: "error", msg: `قوس غير متطابق '${ch}'` });
+        if (!top || top.ch !== pairs[ch])
+          issues.push({ line: n, level: "error", msg: `قوس غير متطابق '${ch}'` });
       }
     }
-    if (/\t/.test(raw) && / {2,}/.test(raw)) issues.push({ line: n, level: "warn", msg: "خلط بين tab و spaces بالمسافات البادئة" });
-    if (/^\s*(def|class|if|elif|else|for|while|try|except|finally|with)\b[^\n]*[^:\s\\]\s*$/.test(line) && !line.trim().endsWith(",") && !line.includes("(")) {
+    if (/\t/.test(raw) && / {2,}/.test(raw))
+      issues.push({ line: n, level: "warn", msg: "خلط بين tab و spaces بالمسافات البادئة" });
+    if (
+      /^\s*(def|class|if|elif|else|for|while|try|except|finally|with)\b[^\n]*[^:\s\\]\s*$/.test(
+        line,
+      ) &&
+      !line.trim().endsWith(",") &&
+      !line.includes("(")
+    ) {
       issues.push({ line: n, level: "error", msg: "ناقص ':' بنهاية الجملة" });
     }
-    if (/\bprint\s+[^(\s=]/.test(line)) issues.push({ line: n, level: "error", msg: "print بأسلوب Python 2" });
-    if (/\bexcept\s*:\s*$/.test(line)) issues.push({ line: n, level: "warn", msg: "except عام بدون نوع استثناء" });
+    if (/\bprint\s+[^(\s=]/.test(line))
+      issues.push({ line: n, level: "error", msg: "print بأسلوب Python 2" });
+    if (/\bexcept\s*:\s*$/.test(line))
+      issues.push({ line: n, level: "warn", msg: "except عام بدون نوع استثناء" });
     if (SECRET_KEYS.test(line) && /=\s*["'][^"']{12,}["']/.test(line)) {
-      issues.push({ line: n, level: "error", msg: "سر (secret) مكتوب داخل الكود — انقله لمتغير بيئة" });
+      issues.push({
+        line: n,
+        level: "error",
+        msg: "سر (secret) مكتوب داخل الكود — انقله لمتغير بيئة",
+      });
     }
     if (line.length > 200) issues.push({ line: n, level: "warn", msg: "سطر طويل جداً" });
   });
-  for (const s of stack) issues.push({ line: s.line, level: "error", msg: `قوس '${s.ch}' لم يُغلق` });
-  if (inTriple) issues.push({ line: lines.length, level: "error", msg: "سلسلة ثلاثية الاقتباس لم تُغلق" });
+  for (const s of stack)
+    issues.push({ line: s.line, level: "error", msg: `قوس '${s.ch}' لم يُغلق` });
+  if (inTriple)
+    issues.push({ line: lines.length, level: "error", msg: "سلسلة ثلاثية الاقتباس لم تُغلق" });
 
   const errors = issues.filter((i) => i.level === "error").length;
   return {
@@ -149,10 +179,48 @@ export function lintPython(source: string): { issues: Array<{ line: number; leve
 
 function inspectDependencies(files: Array<{ path: string; content: string }>) {
   const imports = new Set<string>();
-  const stdlib = new Set(["os", "sys", "re", "json", "time", "math", "random", "typing", "pathlib", "asyncio", "logging", "datetime", "sqlite3", "subprocess", "threading", "dataclasses", "collections", "itertools", "functools", "hashlib", "base64", "unittest", "argparse", "csv", "io", "shutil", "tempfile", "uuid", "enum", "abc", "contextlib", "traceback", "socket", "struct", "zipfile"]);
+  const stdlib = new Set([
+    "os",
+    "sys",
+    "re",
+    "json",
+    "time",
+    "math",
+    "random",
+    "typing",
+    "pathlib",
+    "asyncio",
+    "logging",
+    "datetime",
+    "sqlite3",
+    "subprocess",
+    "threading",
+    "dataclasses",
+    "collections",
+    "itertools",
+    "functools",
+    "hashlib",
+    "base64",
+    "unittest",
+    "argparse",
+    "csv",
+    "io",
+    "shutil",
+    "tempfile",
+    "uuid",
+    "enum",
+    "abc",
+    "contextlib",
+    "traceback",
+    "socket",
+    "struct",
+    "zipfile",
+  ]);
   for (const f of files) {
     if (!f.path.endsWith(".py")) continue;
-    for (const m of f.content.matchAll(/^\s*(?:from\s+([A-Za-z0-9_.]+)|import\s+([A-Za-z0-9_., ]+))/gm)) {
+    for (const m of f.content.matchAll(
+      /^\s*(?:from\s+([A-Za-z0-9_.]+)|import\s+([A-Za-z0-9_., ]+))/gm,
+    )) {
       const raw = m[1] ?? m[2] ?? "";
       for (const part of raw.split(",")) {
         const top = part.trim().split(".")[0].split(" ")[0];
@@ -168,8 +236,106 @@ function inspectDependencies(files: Array<{ path: string; content: string }>) {
 
 export const TOOLS: ToolDef[] = [
   {
+    name: "security_scope_check",
+    description: "التحقق من نطاق هدف أمني وإعدادات الامتحان دون تنفيذ أي فحص.",
+    parameters: obj(
+      { target: str("الرابط أو النطاق المراد التحقق منه"), category: str("فئة الفحص") },
+      ["target", "category"],
+    ),
+    run: async (a) => ({
+      ok: true,
+      decision: checkScope(String(a.target), String(a.category)),
+      config: scopeConfigSummary(),
+    }),
+  },
+  {
+    name: "http_probe",
+    description: "فحص HTTP واحد محدود لهدف مصرح به فقط. لا يكتشف نطاقات أو منافذ إضافية.",
+    parameters: obj(
+      { target: str("الرابط داخل النطاق المصرح"), category: str("فئة الفحص المسموحة") },
+      ["target", "category"],
+    ),
+    run: async (a) => {
+      const decision = checkScope(String(a.target), String(a.category));
+      if (!decision.allowed) return { ok: false, blocked: true, decision };
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const started = Date.now();
+        const response = await fetch(decision.target, {
+          method: "HEAD",
+          redirect: "manual",
+          signal: controller.signal,
+        });
+        return {
+          ok: true,
+          target: decision.target,
+          status: response.status,
+          statusText: response.statusText,
+          durationMs: Date.now() - started,
+          headers: Object.fromEntries(
+            ["content-type", "server", "location", "strict-transport-security"]
+              .map((name) => [name, response.headers.get(name)])
+              .filter(([, value]) => value !== null),
+          ),
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  },
+  {
+    name: "job_status",
+    description: "قراءة حالة آخر مهمة للمستخدم قبل متابعة أو تشخيص طلب طويل.",
+    parameters: obj({}, []),
+    run: async (_a, ctx) => {
+      const job = await store.latestJob(ctx.ownerId);
+      if (!job) return { ok: true, job: null };
+      return {
+        ok: true,
+        job: {
+          id: job.id,
+          status: job.status,
+          title: job.title,
+          project_id: job.project_id,
+          current_step: job.current_step,
+          progress: job.progress,
+          step_index: job.step_index,
+          total_steps: job.total_steps,
+          error: job.error,
+          updated_at: job.updated_at,
+        },
+      };
+    },
+  },
+  {
+    name: "control_job",
+    description: "إيقاف أو استئناف أو إعادة محاولة أو إلغاء مهمة محفوظة بعد التحقق من ملكيتها.",
+    parameters: obj(
+      {
+        job_id: str("معرّف المهمة"),
+        action: { type: "string", enum: ["pause", "resume", "retry", "cancel"] },
+      },
+      ["job_id", "action"],
+    ),
+    run: async (a, ctx) => {
+      const action = String(a.action);
+      if (!["pause", "resume", "retry", "cancel"].includes(action))
+        return { ok: false, error: "إجراء مهمة غير صالح" };
+      const job = await store.controlJob(
+        ctx.ownerId,
+        String(a.job_id),
+        action as "pause" | "resume" | "retry" | "cancel",
+      );
+      return job
+        ? { ok: true, job_id: job.id, status: job.status }
+        : { ok: false, error: "المهمة غير موجودة أو لا تخص هذا المستخدم" };
+    },
+  },
+  {
     name: "web_search",
-    description: "بحث حي بالإنترنت. استخدمه لأي سؤال عن إصدارات، مكتبات، أخطاء حديثة، أو توثيق رسمي.",
+    description:
+      "بحث حي بالإنترنت. استخدمه لأي سؤال عن إصدارات، مكتبات، أخطاء حديثة، أو توثيق رسمي.",
     parameters: obj({ query: str("عبارة البحث") }, ["query"]),
     run: async (a, ctx) => {
       const results = await webSearch(String(a.query));
@@ -187,7 +353,11 @@ export const TOOLS: ToolDef[] = [
     name: "create_project",
     description: "إنشاء مشروع جديد للمستخدم. استخدمه قبل إنشاء ملفات مشروع جديد.",
     parameters: obj(
-      { name: str("اسم المشروع"), description: str("وصف قصير"), technology: str("التقنيات، مثلاً python/fastapi") },
+      {
+        name: str("اسم المشروع"),
+        description: str("وصف قصير"),
+        technology: str("التقنيات، مثلاً python/fastapi"),
+      },
       ["name", "description", "technology"],
     ),
     run: async (a, ctx) => {
@@ -208,7 +378,15 @@ export const TOOLS: ToolDef[] = [
     parameters: obj({}, []),
     run: async (_a, ctx) => {
       const ps = await store.listProjects(ctx.ownerId);
-      return { ok: true, projects: ps.map((p) => ({ id: p.id, name: p.name, technology: p.technology, updated_at: p.updated_at })) };
+      return {
+        ok: true,
+        projects: ps.map((p) => ({
+          id: p.id,
+          name: p.name,
+          technology: p.technology,
+          updated_at: p.updated_at,
+        })),
+      };
     },
   },
   {
@@ -218,7 +396,10 @@ export const TOOLS: ToolDef[] = [
     run: async (_a, ctx) => {
       const pid = await needProject(ctx);
       const fs = await store.listFiles(pid);
-      return { ok: true, files: fs.map((f) => ({ path: f.path, bytes: f.bytes, version: f.version })) };
+      return {
+        ok: true,
+        files: fs.map((f) => ({ path: f.path, bytes: f.bytes, version: f.version })),
+      };
     },
   },
   {
@@ -236,36 +417,73 @@ export const TOOLS: ToolDef[] = [
     name: "write_file",
     description:
       "إنشاء أو استبدال ملف داخل المشروع (يحفظ نسخة من القديم تلقائياً). للملفات الطويلة اكتبها على أجزاء عبر append_file.",
-    parameters: obj({ path: str("مسار الملف"), content: str("المحتوى الكامل"), note: str("سبب التعديل") }, ["path", "content", "note"]),
+    parameters: obj(
+      { path: str("مسار الملف"), content: str("المحتوى الكامل"), note: str("سبب التعديل") },
+      ["path", "content", "note"],
+    ),
     run: async (a, ctx) => {
       const pid = await needProject(ctx);
-      const r = await store.writeFile({ pid: undefined, projectId: pid, path: String(a.path), content: String(a.content), note: String(a.note ?? "") } as any);
-      return { ok: true, path: r.file.path, version: r.version, bytes: r.file.bytes, created: r.created };
+      const r = await store.writeFile({
+        pid: undefined,
+        projectId: pid,
+        path: String(a.path),
+        content: String(a.content),
+        note: String(a.note ?? ""),
+      } as any);
+      return {
+        ok: true,
+        path: r.file.path,
+        version: r.version,
+        bytes: r.file.bytes,
+        created: r.created,
+      };
     },
   },
   {
     name: "append_file",
     description: "إضافة جزء إلى نهاية ملف موجود — للتوليد المُقطّع (chunked) للملفات الطويلة جداً.",
-    parameters: obj({ path: str("مسار الملف"), content: str("الجزء المُضاف") }, ["path", "content"]),
+    parameters: obj({ path: str("مسار الملف"), content: str("الجزء المُضاف") }, [
+      "path",
+      "content",
+    ]),
     run: async (a, ctx) => {
       const pid = await needProject(ctx);
       const existing = await store.readFile(pid, String(a.path));
       const merged = (existing?.content ?? "") + (existing ? "\n" : "") + String(a.content);
-      const r = await store.writeFile({ projectId: pid, path: String(a.path), content: merged, note: "chunk" });
-      return { ok: true, path: r.file.path, total_lines: merged.split("\n").length, version: r.version };
+      const r = await store.writeFile({
+        projectId: pid,
+        path: String(a.path),
+        content: merged,
+        note: "chunk",
+      });
+      return {
+        ok: true,
+        path: r.file.path,
+        total_lines: merged.split("\n").length,
+        version: r.version,
+      };
     },
   },
   {
     name: "update_file",
     description: "استبدال نص محدد داخل ملف (إصلاح دقيق بدون إعادة كتابة كل الملف).",
-    parameters: obj({ path: str("مسار الملف"), find: str("النص القديم"), replace: str("النص الجديد") }, ["path", "find", "replace"]),
+    parameters: obj(
+      { path: str("مسار الملف"), find: str("النص القديم"), replace: str("النص الجديد") },
+      ["path", "find", "replace"],
+    ),
     run: async (a, ctx) => {
       const pid = await needProject(ctx);
       const f = await store.readFile(pid, String(a.path));
       if (!f) return { ok: false, error: "الملف غير موجود" };
-      if (!f.content.includes(String(a.find))) return { ok: false, error: "النص المطلوب غير موجود في الملف" };
+      if (!f.content.includes(String(a.find)))
+        return { ok: false, error: "النص المطلوب غير موجود في الملف" };
       const next = f.content.replace(String(a.find), String(a.replace));
-      const r = await store.writeFile({ projectId: pid, path: f.path, content: next, note: "update" });
+      const r = await store.writeFile({
+        projectId: pid,
+        path: f.path,
+        content: next,
+        note: "update",
+      });
       return { ok: true, path: f.path, version: r.version };
     },
   },
@@ -291,7 +509,10 @@ export const TOOLS: ToolDef[] = [
   {
     name: "restore_version",
     description: "إرجاع ملف إلى نسخة سابقة.",
-    parameters: obj({ path: str("مسار الملف"), version: { type: "integer", description: "رقم النسخة" } }, ["path", "version"]),
+    parameters: obj(
+      { path: str("مسار الملف"), version: { type: "integer", description: "رقم النسخة" } },
+      ["path", "version"],
+    ),
     run: async (a, ctx) => {
       const pid = await needProject(ctx);
       const r = await store.restoreVersion(pid, String(a.path), Number(a.version));
@@ -313,12 +534,16 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "inspect_dependencies",
-    description: "استخراج الاعتماديات الخارجية من ملفات بايثون في المشروع (لبناء requirements.txt).",
+    description:
+      "استخراج الاعتماديات الخارجية من ملفات بايثون في المشروع (لبناء requirements.txt).",
     parameters: obj({}, []),
     run: async (_a, ctx) => {
       const pid = await needProject(ctx);
       const fs = await store.listFiles(pid);
-      return { ok: true, dependencies: inspectDependencies(fs.map((f) => ({ path: f.path, content: f.content }))) };
+      return {
+        ok: true,
+        dependencies: inspectDependencies(fs.map((f) => ({ path: f.path, content: f.content }))),
+      };
     },
   },
   {
@@ -335,7 +560,8 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "generate_zip",
-    description: "حزم كل ملفات المشروع في ملف ZIP حقيقي وإرساله للمستخدم (يستثني .env والمفاتيح تلقائياً).",
+    description:
+      "حزم كل ملفات المشروع في ملف ZIP حقيقي وإرساله للمستخدم (يستثني .env والمفاتيح تلقائياً).",
     parameters: obj({}, []),
     run: async (_a, ctx) => {
       const pid = await needProject(ctx);
@@ -359,7 +585,10 @@ export const TOOLS: ToolDef[] = [
       const pid = await needProject(ctx);
       const f = await store.readFile(pid, String(a.path));
       if (!f) return { ok: false, error: "الملف غير موجود" };
-      ctx.deliveries.push({ name: f.path.split("/").pop()!, buffer: Buffer.from(f.content, "utf8") });
+      ctx.deliveries.push({
+        name: f.path.split("/").pop()!,
+        buffer: Buffer.from(f.content, "utf8"),
+      });
       return { ok: true, sent: f.path, bytes: f.bytes };
     },
   },

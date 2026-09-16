@@ -45,6 +45,22 @@ export type Job = {
   updated_at: string;
 };
 
+export const JOB_STATUSES = [
+  "queued",
+  "planning",
+  "generating",
+  "analyzing",
+  "testing",
+  "repairing",
+  "packaging",
+  "completed",
+  "failed",
+  "paused",
+  "resuming",
+  "cancelled",
+] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
 async function sb() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin as any;
@@ -59,7 +75,9 @@ export async function log(
   const safe = message.replace(/\b\d{6,}:[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_TOKEN]");
   try {
     const c = await sb();
-    await c.from("alyssa_logs").insert({ level, scope, message: safe.slice(0, 4000), meta: meta ?? null });
+    await c
+      .from("alyssa_logs")
+      .insert({ level, scope, message: safe.slice(0, 4000), meta: meta ?? null });
   } catch (e) {
     console.error("[alyssa-log] failed", e);
   }
@@ -195,9 +213,21 @@ export async function touchProject(projectId: string, patch: Partial<Project> = 
 function langOf(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
-    py: "python", js: "javascript", ts: "typescript", tsx: "tsx", jsx: "jsx",
-    html: "html", css: "css", json: "json", md: "markdown", sh: "bash",
-    sql: "sql", yml: "yaml", yaml: "yaml", txt: "text", toml: "toml",
+    py: "python",
+    js: "javascript",
+    ts: "typescript",
+    tsx: "tsx",
+    jsx: "jsx",
+    html: "html",
+    css: "css",
+    json: "json",
+    md: "markdown",
+    sh: "bash",
+    sql: "sql",
+    yml: "yaml",
+    yaml: "yaml",
+    txt: "text",
+    toml: "toml",
   };
   return map[ext] ?? ext ?? "text";
 }
@@ -318,7 +348,8 @@ export async function searchProject(projectId: string, needle: string) {
   for (const f of files) {
     const lines = (f.content ?? "").split("\n");
     lines.forEach((l, i) => {
-      if (l.toLowerCase().includes(q) && out.length < 60) out.push({ path: f.path, line: i + 1, text: l.trim().slice(0, 200) });
+      if (l.toLowerCase().includes(q) && out.length < 60)
+        out.push({ path: f.path, line: i + 1, text: l.trim().slice(0, 200) });
     });
   }
   return out;
@@ -362,9 +393,61 @@ export async function updateJob(jobId: string, patch: Partial<Job>) {
     .eq("id", jobId);
 }
 
-export async function addJobStep(jobId: string, idx: number, name: string, status: string, output?: string) {
+export async function checkpointJob(
+  jobId: string,
+  checkpoint: {
+    status?: JobStatus;
+    currentStep?: string | null;
+    stepIndex?: number;
+    totalSteps?: number;
+    progress?: number;
+    lastSuccessfulChunk?: string | null;
+    error?: string | null;
+  },
+) {
+  await updateJob(jobId, {
+    ...(checkpoint.status ? { status: checkpoint.status } : {}),
+    ...(checkpoint.currentStep !== undefined ? { current_step: checkpoint.currentStep } : {}),
+    ...(checkpoint.stepIndex !== undefined ? { step_index: checkpoint.stepIndex } : {}),
+    ...(checkpoint.totalSteps !== undefined ? { total_steps: checkpoint.totalSteps } : {}),
+    ...(checkpoint.progress !== undefined
+      ? { progress: Math.max(0, Math.min(100, checkpoint.progress)) }
+      : {}),
+    ...(checkpoint.lastSuccessfulChunk !== undefined
+      ? { last_successful_chunk: checkpoint.lastSuccessfulChunk }
+      : {}),
+    ...(checkpoint.error !== undefined ? { error: checkpoint.error } : {}),
+  });
+}
+
+export async function controlJob(
+  ownerId: number,
+  jobId: string,
+  action: "pause" | "resume" | "cancel" | "retry",
+) {
+  const job = await getJob(jobId);
+  if (!job || job.owner_id !== ownerId) return null;
+  const next: Record<typeof action, JobStatus> = {
+    pause: "paused",
+    resume: "resuming",
+    cancel: "cancelled",
+    retry: "resuming",
+  };
+  await checkpointJob(jobId, { status: next[action], error: null });
+  return getJob(jobId);
+}
+
+export async function addJobStep(
+  jobId: string,
+  idx: number,
+  name: string,
+  status: string,
+  output?: string,
+) {
   const c = await sb();
-  await c.from("alyssa_job_steps").insert({ job_id: jobId, idx, name, status, output: output?.slice(0, 4000) ?? null });
+  await c
+    .from("alyssa_job_steps")
+    .insert({ job_id: jobId, idx, name, status, output: output?.slice(0, 4000) ?? null });
 }
 
 export async function getJob(jobId: string): Promise<Job | null> {
@@ -390,7 +473,16 @@ export async function runningJob(ownerId: number): Promise<Job | null> {
     .from("alyssa_jobs")
     .select("*")
     .eq("owner_id", ownerId)
-    .in("status", ["planning", "generating", "testing", "repairing", "resuming"])
+    .in("status", [
+      "queued",
+      "planning",
+      "generating",
+      "analyzing",
+      "testing",
+      "repairing",
+      "packaging",
+      "resuming",
+    ])
     .order("created_at", { ascending: false })
     .limit(1);
   return ((data ?? [])[0] as Job) ?? null;
@@ -399,7 +491,9 @@ export async function runningJob(ownerId: number): Promise<Job | null> {
 export async function saveResearch(ownerId: number | null, query: string, results: unknown) {
   try {
     const c = await sb();
-    await c.from("alyssa_research").insert({ owner_id: ownerId, query: query.slice(0, 500), results });
+    await c
+      .from("alyssa_research")
+      .insert({ owner_id: ownerId, query: query.slice(0, 500), results });
   } catch (e) {
     console.error("[research] save failed", e);
   }

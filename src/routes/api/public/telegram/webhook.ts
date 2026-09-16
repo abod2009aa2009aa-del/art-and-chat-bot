@@ -3,13 +3,10 @@ import { createHash, timingSafeEqual } from "crypto";
 import { inflateSync } from "zlib";
 import { unzipSync, strFromU8 } from "fflate";
 import {
-  BOT_COMMANDS, AI_TOOL_KEYS, runAiTool,
+  AI_TOOL_KEYS, runAiTool,
   toolIp, toolDns, toolWhois, toolPingUrl, toolMeta, toolShort,
   toolWeather, toolCurrency, toolCalc, detectPhotoIntent,
 } from "@/lib/telegram-tools";
-import {
-  MAIN_MENU_TEXT, MENU_SECTIONS, mainMenuKeyboard, sectionKeyboard, sectionText, commandDescription,
-} from "@/lib/telegram-menu";
 import { listSourceText, readSourceFile, searchSource, sourceStats, sourcePaths, selfSummary } from "@/lib/self-source";
 
 
@@ -59,8 +56,9 @@ function baghdadNow(): { iso: string; human: string } {
 
 // ============ Persistent Memory (Lovable Cloud DB) ============
 // Conversation history is stored in `telegram_messages` table — never lost.
-const HISTORY_LIMIT = 60; // نافذة السياق المُرسلة للـ AI — أصغر = أسرع (التخزين بالـ DB يبقى كامل)
-const LONG_TERM_SUMMARY_AFTER = 300; // إذا زادت الرسائل، نلخّص القديم كذاكرة طويلة المدى
+const HISTORY_LIMIT = 60; // نافذة السياق المُرسلة للـ AI — التخزين بالـ DB يبقى كامل
+const MEMORY_SCAN_LIMIT = 300; // نافذة القراءة اللازمة لاكتشاف الرسائل القديمة وتلخيصها
+const LONG_TERM_SUMMARY_AFTER = 300;
 
 type Msg = { role: "user" | "assistant"; name?: string; content: string; ts: number };
 
@@ -801,6 +799,28 @@ async function analyzeDocument(token: string, doc: any, userCaption: string, sys
   const lower = name.toLowerCase();
   const ask = userCaption?.trim() || `حلل هذا الملف "${name}" بالتفصيل: شنو يسوي، نقاط القوة، الأخطاء أو الثغرات، اقتراحات تحسين، وملخص نهائي.`;
 
+  // ZIP projects: inspect the real archive and send only bounded text context to the model.
+  if (mime === "application/zip" || lower.endsWith(".zip")) {
+    const files = unzipSync(new Uint8Array(buf));
+    const textExts = new Set(["txt", "md", "json", "csv", "xml", "yml", "yaml", "ini", "env", "py", "js", "ts", "tsx", "jsx", "html", "css", "sh", "sql", "go", "rs", "java", "kt", "toml"]);
+    const entries = Object.entries(files).filter(([path, content]) => content.length > 0 && !path.endsWith("/") && textExts.has(path.split(".").pop()?.toLowerCase() ?? ""));
+    const tree = Object.keys(files).filter((path) => !path.endsWith("/")).slice(0, 300).join("\n");
+    const content = entries
+      .slice(0, 80)
+      .map(([path, content]) => `===== ${path} =====\n${redactSecrets(strFromU8(content)).slice(0, 6000)}`)
+      .join("\n\n")
+      .slice(0, 80000);
+    try {
+      return await aiChat([
+        { role: "system", content: sysPrompt },
+        { role: "user", content: `هذا مشروع ZIP اسمه "${name}". هذه شجرة الملفات:\n${tree}\n\nمحتوى الملفات النصية المتاح:\n${content}\n\n${ask}` },
+      ]);
+    } catch (e) {
+      if (!isAiUnavailableError(e)) throw e;
+      return offlineStructuredSummary(name, "zip", `${tree}\n\n${content}`, ask, "تحليل محلي محدود لمحتويات ZIP النصية.");
+    }
+  }
+
   // PDF → multimodal file input
   if (mime === "application/pdf" || lower.endsWith(".pdf")) {
     const dataUrl = `data:application/pdf;base64,${buf.toString("base64")}`;
@@ -866,37 +886,13 @@ async function handleUpdate(update: any, token: string) {
     return;
   }
 
-  // ===== أزرار القائمة داخل المحادثة =====
+  // Callback queries from old menu messages are acknowledged without creating a new menu.
   if (update.callback_query) {
     const cq = update.callback_query;
-    const data: string = cq.data ?? "";
-    const cid = cq.message?.chat?.id;
-    const mid = cq.message?.message_id;
-    try {
-      if (data === "menu") {
-        await tg(token, "editMessageText", { chat_id: cid, message_id: mid, text: MAIN_MENU_TEXT, reply_markup: mainMenuKeyboard() } as any);
-      } else if (data.startsWith("sec:")) {
-        const key = data.slice(4);
-        const kb = sectionKeyboard(key);
-        if (kb) await tg(token, "editMessageText", { chat_id: cid, message_id: mid, text: sectionText(key).replace(/\*/g, ""), reply_markup: kb } as any);
-      } else if (data.startsWith("cmd:")) {
-        const c = data.slice(4);
-        if (c === "stats" || c === "selftest") {
-          await tg(token, "answerCallbackQuery", { callback_query_id: cq.id });
-          await handleUpdate({ message: { ...cq.message, from: cq.from, text: `/${c}` } }, token);
-          return;
-        }
-        await tg(token, "sendMessage", {
-          chat_id: cid,
-          text: `▶️ /${c}\n${commandDescription(c)}\n\nاكتب: \`/${c} <المحتوى>\`\nأو رد بالأمر على رسالة تحتوي المحتوى.`,
-          parse_mode: "Markdown",
-        } as any);
-      }
-      await tg(token, "answerCallbackQuery", { callback_query_id: cq.id });
-    } catch (e: any) {
-      console.error("[tg] callback error", e?.message ?? e);
-      await tg(token, "answerCallbackQuery", { callback_query_id: cq.id, text: "صار خطأ بسيط 😅" }).catch(() => {});
-    }
+    await tg(token, "answerCallbackQuery", {
+      callback_query_id: cq.id,
+      text: "القوائم القديمة لم تعد مستخدمة. اكتب طلبك مباشرة إلى أليسا.",
+    }).catch(() => {});
     return;
   }
 
@@ -915,6 +911,16 @@ async function handleUpdate(update: any, token: string) {
   const isDev = userId === DEVELOPER_ID || (userUsername?.toLowerCase() === DEVELOPER_USERNAME.toLowerCase());
   const bot = await getBotInfo(token);
   console.log(`[tg] msg from ${userId} (${userName}) in ${chatType} ${chatId}: "${text.slice(0,100)}"`);
+
+  if (userId) {
+    const { upsertUser } = await import("@/lib/alyssa/store.server");
+    await upsertUser({
+      id: userId,
+      username: userUsername,
+      first_name: userName,
+      isDeveloper: isDev,
+    });
+  }
 
   // Track group membership for cross-context recall
   if (isGroup && userId) {
@@ -1015,13 +1021,16 @@ async function handleUpdate(update: any, token: string) {
         }
 
         const prompt = text || "حلل هذي الصورة وقلي كل شي تشوفه بالتفصيل وبطريقة مسلية";
-        const reply = await aiChat([
+        const imageMessages = [
           { role: "system", content: systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName, userUsername }) },
           { role: "user", content: [
             { type: "text", text: prompt },
             { type: "image_url", image_url: { url: dataUrl } },
           ]},
-        ]);
+        ];
+        const { runOrchestrator } = await import("@/lib/alyssa/orchestrator.server");
+        const orch = await runOrchestrator({ ownerId: userId, chatId, messages: imageMessages, hasImage: true });
+        const reply = orch.text;
         await stopTyping(token, chatId, typingId);
         await tg(token, "sendMessage", { chat_id: chatId, text: reply || "ما كدرت أحلل 😅", reply_to_message_id: msg.message_id });
         await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[أرسل صورة] ${text || ""}`.trim() });
@@ -1123,12 +1132,6 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
-    // ===== قائمة الأزرار داخل المحادثة =====
-    if (/^\/(menu|قائمة|الاوامر|الأوامر)(@\w+)?$/i.test(text)) {
-      await tg(token, "sendMessage", { chat_id: chatId, text: MAIN_MENU_TEXT, reply_markup: mainMenuKeyboard(), reply_to_message_id: msg.message_id } as any);
-      return;
-    }
-
     // ===== الوعي الذاتي: ملفاتي / قراءة ملف / بحث بالكود / فحص ذاتي =====
     if (/^\/(myfiles|ملفاتي)(@\w+)?$/i.test(text)) {
       const out = listSourceText();
@@ -1172,7 +1175,7 @@ async function handleUpdate(update: any, token: string) {
         .map((x, i) => `${i + 1}. ${x.p} — ${x.n} سطر`).join("\n");
       await tg(token, "sendMessage", {
         chat_id: chatId,
-        text: `📊 إحصائيات كودي:\n\n• الملفات: ${s.files}\n• أسطر البرمجة: ${s.lines}\n• الأحرف: ${s.chars}\n• أدوات الذكاء: ${AI_TOOL_KEYS.length}\n• أقسام القائمة: ${MENU_SECTIONS.length}\n\n🔝 أكبر ملفاتي:\n${top}`,
+        text: `📊 إحصائيات كودي:\n\n• الملفات: ${s.files}\n• أسطر البرمجة: ${s.lines}\n• الأحرف: ${s.chars}\n• أدوات الذكاء: ${AI_TOOL_KEYS.length}\n\n🔝 أكبر ملفاتي:\n${top}`,
         reply_to_message_id: msg.message_id,
       });
       return;
@@ -1184,7 +1187,6 @@ async function handleUpdate(update: any, token: string) {
       checks.push(`✅ الاتصال بتلكرام: شغال`);
       checks.push(`✅ الوعي الذاتي: ${s.files} ملف • ${s.lines} سطر • ${s.chars} حرف`);
       checks.push(`✅ الأدوات المسجّلة: ${AI_TOOL_KEYS.length} أداة ذكاء + 9 أدوات شبكة`);
-      checks.push(`✅ أقسام الأزرار: ${MENU_SECTIONS.length} قسم ملوّن`);
       try { await db(); checks.push("✅ الذاكرة الدائمة: متصلة"); } catch { checks.push("⚠️ الذاكرة الدائمة: غير متاحة الآن"); }
       try { const t = await aiChat([{ role: "user", content: "قل: تمام" }]); checks.push(t ? "✅ نموذج الذكاء: يرد" : "⚠️ نموذج الذكاء: رد فارغ"); }
       catch { checks.push("⚠️ نموذج الذكاء: وضع استمرار الخدمة"); }
@@ -1342,8 +1344,7 @@ async function handleUpdate(update: any, token: string) {
 🕐 ${now.human}
 🧠 أعرف نفسي حرف بحرف: ${s.files} ملف • ${s.lines} سطر من كودي.
 
-${MAIN_MENU_TEXT}`,
-        reply_markup: mainMenuKeyboard(),
+احچيلي بالهدف مباشرة: أصلّح، أبني، أراجع، أختبر، أبحث، أو أحلل. أختار الأدوات المناسبة وحدي.`,
       } as any);
       return;
     }
@@ -1523,14 +1524,15 @@ ${MAIN_MENU_TEXT}`,
     try {
       // Build context from persistent DB memory (per chat)
       const history: any[] = [];
-      const baseHist = await loadHistory(chatId, HISTORY_LIMIT);
+      const memoryRows = await loadHistory(chatId, MEMORY_SCAN_LIMIT);
+      const baseHist = memoryRows.slice(-HISTORY_LIMIT);
       for (const m of baseHist) {
         history.push({ role: m.role, content: m.role === "user" ? `${m.name ?? ""}: ${m.content}` : m.content });
       }
 
       // ذاكرة طويلة المدى: إذا وصلنا للحد نلخّص كل ما هو أقدم من أقدم رسالة محمّلة
       let longTerm = "";
-      if (baseHist.length >= LONG_TERM_SUMMARY_AFTER) {
+      if (memoryRows.length >= LONG_TERM_SUMMARY_AFTER && baseHist.length) {
         const oldestTs = new Date(baseHist[0].ts).toISOString();
         longTerm = await loadLongTermSummary(chatId, oldestTs);
       }
@@ -1642,16 +1644,6 @@ ${MAIN_MENU_TEXT}`,
 
 const lastBotMsgIds = new Set<string>();
 
-let commandsRegistered = false;
-async function ensureCommandsRegistered(token: string) {
-  if (commandsRegistered) return;
-  commandsRegistered = true;
-  try {
-    const r: any = await tg(token, "setMyCommands", { commands: BOT_COMMANDS, scope: { type: "default" } });
-    console.log("[tg] setMyCommands →", r?.ok, r?.description ?? "");
-  } catch (e) { console.error("[tg] setMyCommands failed", e); commandsRegistered = false; }
-}
-
 async function handleReaction(r: any, token: string) {
   // If a user reacted on bot's message, sometimes react back to *their* recent message
   const chatId = r.chat?.id; const userId = r.user?.id; const mid = r.message_id;
@@ -1688,8 +1680,6 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return Response.json({ ok: true });
         }
         console.log("[tg] POST webhook ok, update_id=", update?.update_id);
-        // Register the Telegram command menu once per Worker instance
-        await ensureCommandsRegistered(token);
         try {
           await handleUpdate(update, token);
         } catch (e: any) {
