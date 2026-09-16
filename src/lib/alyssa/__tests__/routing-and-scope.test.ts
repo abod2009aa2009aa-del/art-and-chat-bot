@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { routeCapabilities } from "../capability-router";
-import { checkScope } from "../scope-guard.server";
+import { checkScope, isPublicHttpTarget } from "../scope-guard.server";
+import { validateProjectFilePath } from "../store.server";
 
 const savedEnv = { ...process.env };
 
@@ -46,5 +47,30 @@ describe("ScopeGuard", () => {
     expect(checkScope("https://example.com/login", "reconnaissance").allowed).toBe(true);
     expect(checkScope("https://example.com/login", "port_scan").allowed).toBe(false);
     expect(checkScope("https://outside.test", "reconnaissance").allowed).toBe(false);
+  });
+
+  it("enforces exam time and allowed services", () => {
+    process.env.EXAM_MODE = "true";
+    process.env.EXAM_TARGET_DOMAIN = "example.com";
+    process.env.ALLOWED_TEST_CATEGORIES = "reconnaissance";
+    process.env.ALLOWED_SERVICES = "443";
+    process.env.EXAM_START_TIME = new Date(Date.now() + 60_000).toISOString();
+    expect(checkScope("https://example.com", "reconnaissance").allowed).toBe(false);
+
+    process.env.EXAM_START_TIME = new Date(Date.now() - 60_000).toISOString();
+    expect(checkScope("http://example.com", "reconnaissance").allowed).toBe(false);
+  });
+
+  it("blocks private and local URL targets", () => {
+    expect(isPublicHttpTarget("http://127.0.0.1:8080")).toBe(false);
+    expect(isPublicHttpTarget("http://10.0.0.5")).toBe(false);
+    expect(isPublicHttpTarget("http://[::1]")).toBe(false);
+    expect(isPublicHttpTarget("https://example.com")).toBe(true);
+  });
+
+  it("rejects traversal and oversized path forms before persistence", () => {
+    expect(validateProjectFilePath("src/main.py")).toBe("src/main.py");
+    expect(() => validateProjectFilePath("../../secrets.txt")).toThrow();
+    expect(() => validateProjectFilePath("C:\\temp\\file.txt")).not.toThrow();
   });
 });

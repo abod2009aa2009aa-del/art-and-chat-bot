@@ -1,16 +1,31 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, no-control-regex, no-useless-escape, prefer-const */
+
 import { createFileRoute } from "@tanstack/react-router";
 import { createHash, timingSafeEqual } from "crypto";
 import { inflateSync } from "zlib";
 import { unzipSync, strFromU8 } from "fflate";
 import {
-  AI_TOOL_KEYS, runAiTool,
-  toolIp, toolDns, toolWhois, toolPingUrl, toolMeta, toolShort,
-  toolWeather, toolCurrency, toolCalc, detectPhotoIntent,
+  AI_TOOL_KEYS,
+  runAiTool,
+  toolIp,
+  toolDns,
+  toolWhois,
+  toolPingUrl,
+  toolMeta,
+  toolShort,
+  toolWeather,
+  toolCurrency,
+  toolCalc,
+  detectPhotoIntent,
 } from "@/lib/telegram-tools";
-import { listSourceText, readSourceFile, searchSource, sourceStats, sourcePaths, selfSummary } from "@/lib/self-source";
-
-
-
+import {
+  listSourceText,
+  readSourceFile,
+  searchSource,
+  sourceStats,
+  sourcePaths,
+  selfSummary,
+} from "@/lib/self-source";
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
 const DEVELOPER_ID = 6475190017;
@@ -20,11 +35,23 @@ const BOT_NAME = "أليسا";
 
 // ============ Features registry (أليسا تعرف قدراتها) ============
 const FEATURES: Array<{ cmd: string; desc: string }> = [
-  { cmd: "دردشة طبيعية", desc: "رد بلهجة عراقية بذاكرة عملاقة (500+ رسالة) + تلخيص طويل المدى محفوظ بقاعدة بيانات دائمة." },
-  { cmd: "معرفة الوقت", desc: "أعرف اليوم والتاريخ والساعة الحالية بتوقيت بغداد + سنة 2026 والمستجدات." },
-  { cmd: "معرفة المطور", desc: `أعرف مطوري ${DEVELOPER_NAME} (@${DEVELOPER_USERNAME} • ${DEVELOPER_ID}) وأتكلم معاه بدون قيود.` },
+  {
+    cmd: "دردشة طبيعية",
+    desc: "رد بلهجة عراقية بذاكرة عملاقة (500+ رسالة) + تلخيص طويل المدى محفوظ بقاعدة بيانات دائمة.",
+  },
+  {
+    cmd: "معرفة الوقت",
+    desc: "أعرف اليوم والتاريخ والساعة الحالية بتوقيت بغداد + سنة 2026 والمستجدات.",
+  },
+  {
+    cmd: "معرفة المطور",
+    desc: `أعرف مطوري ${DEVELOPER_NAME} (@${DEVELOPER_USERNAME} • ${DEVELOPER_ID}) وأتكلم معاه بدون قيود.`,
+  },
   { cmd: "/img <وصف>", desc: "توليد صورة جديدة من نص." },
-  { cmd: "/عدل <وصف>", desc: "تعديل صورة: دز صورة مع كابشن /عدل <شنو تريد أغيّر> أو رد بالأمر على صورة." },
+  {
+    cmd: "/عدل <وصف>",
+    desc: "تعديل صورة: دز صورة مع كابشن /عدل <شنو تريد أغيّر> أو رد بالأمر على صورة.",
+  },
   { cmd: "تحليل صور", desc: "دز صورة بدون أمر لأشرحها بالتفصيل." },
   { cmd: "/كود", desc: "رد على Screenshot بالأمر ليحولها لكود جاهز (HTML/CSS/JSX...)." },
   { cmd: "/بحث <سؤال>", desc: "بحث حي بالإنترنت (DuckDuckGo) مع مصادر مرقّمة." },
@@ -33,7 +60,10 @@ const FEATURES: Array<{ cmd: string; desc: string }> = [
   { cmd: "تحليل ملفات", desc: "PDF / DOCX / TXT / كل ملفات الكود — تلخيص وفهم." },
   { cmd: "/ban و /mute", desc: "أدوات إشراف رداً على رسالة (للمشرفين)." },
   { cmd: "/ping", desc: "اختبار اتصال." },
-  { cmd: "وضع استمرار الخدمة", desc: "إذا صار ضغط على نموذج معيّن، أبدّل تلقائياً لمسار ثاني حتى أبقى أرد وما أصمت." },
+  {
+    cmd: "وضع استمرار الخدمة",
+    desc: "إذا صار ضغط على نموذج معيّن، أبدّل تلقائياً لمسار ثاني حتى أبقى أرد وما أصمت.",
+  },
 ];
 function featuresListText(): string {
   return FEATURES.map((f, i) => `${i + 1}. ${f.cmd} — ${f.desc}`).join("\n");
@@ -44,8 +74,24 @@ function baghdadNow(): { iso: string; human: string } {
   const now = new Date();
   const bg = new Date(now.getTime() + 3 * 3600 * 1000);
   const days = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
-  const months = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
-  const d = bg.getUTCDay(), day = bg.getUTCDate(), mo = bg.getUTCMonth(), yr = bg.getUTCFullYear();
+  const months = [
+    "يناير",
+    "فبراير",
+    "مارس",
+    "أبريل",
+    "مايو",
+    "يونيو",
+    "يوليو",
+    "أغسطس",
+    "سبتمبر",
+    "أكتوبر",
+    "نوفمبر",
+    "ديسمبر",
+  ];
+  const d = bg.getUTCDay(),
+    day = bg.getUTCDate(),
+    mo = bg.getUTCMonth(),
+    yr = bg.getUTCFullYear();
   const hh = String(bg.getUTCHours()).padStart(2, "0");
   const mm = String(bg.getUTCMinutes()).padStart(2, "0");
   return {
@@ -72,15 +118,27 @@ async function db() {
   return supabaseAdmin;
 }
 
-async function saveMsg(opts: { chatId: number; chatType: string; userId: number | null; userName: string | null; role: "user" | "assistant"; content: string; }) {
+async function saveMsg(opts: {
+  chatId: number;
+  chatType: string;
+  userId: number | null;
+  userName: string | null;
+  role: "user" | "assistant";
+  content: string;
+}) {
   try {
     const sb = await db();
     await sb.from("telegram_messages").insert({
-      chat_id: opts.chatId, chat_type: opts.chatType,
-      user_id: opts.userId, user_name: opts.userName,
-      role: opts.role, content: opts.content,
+      chat_id: opts.chatId,
+      chat_type: opts.chatType,
+      user_id: opts.userId,
+      user_name: opts.userName,
+      role: opts.role,
+      content: opts.content,
     });
-  } catch (e) { console.error("[mem] save failed", e); }
+  } catch (e) {
+    console.error("[mem] save failed", e);
+  }
 }
 
 async function loadHistory(chatId: number, limit = HISTORY_LIMIT): Promise<Msg[]> {
@@ -92,14 +150,26 @@ async function loadHistory(chatId: number, limit = HISTORY_LIMIT): Promise<Msg[]
       .eq("chat_id", chatId)
       .order("created_at", { ascending: false })
       .limit(limit);
-    if (error) { console.error("[mem] load error", error); return []; }
+    if (error) {
+      console.error("[mem] load error", error);
+      return [];
+    }
     return (data ?? []).reverse().map((r: any) => ({
-      role: r.role, name: r.user_name ?? undefined, content: r.content, ts: new Date(r.created_at).getTime(),
+      role: r.role,
+      name: r.user_name ?? undefined,
+      content: r.content,
+      ts: new Date(r.created_at).getTime(),
     }));
-  } catch (e) { console.error("[mem] load failed", e); return []; }
+  } catch (e) {
+    console.error("[mem] load failed", e);
+    return [];
+  }
 }
 
-async function loadUserRecentAcrossGroups(userId: number, perGroup = 15): Promise<Array<{ chatId: number; msgs: Msg[] }>> {
+async function loadUserRecentAcrossGroups(
+  userId: number,
+  perGroup = 15,
+): Promise<Array<{ chatId: number; msgs: Msg[] }>> {
   try {
     const sb = await db();
     // grab distinct chat_ids the user posted in recently
@@ -112,14 +182,21 @@ async function loadUserRecentAcrossGroups(userId: number, perGroup = 15): Promis
       .limit(200);
     const seen = new Set<number>();
     const ids: number[] = [];
-    for (const r of (chats ?? []) as any[]) if (!seen.has(r.chat_id)) { seen.add(r.chat_id); ids.push(r.chat_id); }
+    for (const r of (chats ?? []) as any[])
+      if (!seen.has(r.chat_id)) {
+        seen.add(r.chat_id);
+        ids.push(r.chat_id);
+      }
     const out: Array<{ chatId: number; msgs: Msg[] }> = [];
     for (const cid of ids.slice(0, 3)) {
       const msgs = await loadHistory(cid, perGroup);
       if (msgs.length) out.push({ chatId: cid, msgs });
     }
     return out;
-  } catch (e) { console.error("[mem] cross-group failed", e); return []; }
+  } catch (e) {
+    console.error("[mem] cross-group failed", e);
+    return [];
+  }
 }
 
 // ============ Long-term memory summarization ============
@@ -130,6 +207,12 @@ async function loadLongTermSummary(chatId: number, olderThan: string): Promise<s
   const cached = longTermCache.get(chatId);
   if (cached && cached.until > Date.now() && cached.upto === olderThan) return cached.summary;
   try {
+    const { loadMemorySummary, saveMemorySummary } = await import("@/lib/alyssa/store.server");
+    const persisted = await loadMemorySummary(chatId).catch(() => null);
+    if (persisted && persisted.sourceThrough >= olderThan) {
+      longTermCache.set(chatId, { until: Date.now() + 10 * 60 * 1000, summary: persisted.summary, upto: persisted.sourceThrough });
+      return persisted.summary;
+    }
     const sb = await db();
     const { data } = await sb
       .from("telegram_messages")
@@ -141,26 +224,41 @@ async function loadLongTermSummary(chatId: number, olderThan: string): Promise<s
     const rows = (data ?? []).reverse();
     if (rows.length < 30) return "";
     const compact = rows
-      .map((r: any) => `${r.role === "user" ? (r.user_name ?? "user") : BOT_NAME}: ${String(r.content).slice(0, 300)}`)
+      .map(
+        (r: any) =>
+          `${r.role === "user" ? (r.user_name ?? "user") : BOT_NAME}: ${String(r.content).slice(0, 300)}`,
+      )
       .join("\n")
       .slice(0, 20000);
     let summary = "";
     try {
-      summary = await aiChat([
-        { role: "system", content: `لخّص المحادثة التالية بنقاط عربية موجزة. احتفظ بأسماء المستخدمين، الطلبات المهمة، الملفات، الصور، الأكواد، والقرارات. اجعل التلخيص كذاكرة طويلة المدى دقيقة لبوت.` },
-        { role: "user", content: compact },
-      ], "google/gemini-2.5-flash-lite");
+      summary = await aiChat(
+        [
+          {
+            role: "system",
+            content: `لخّص المحادثة التالية بنقاط عربية موجزة. احتفظ بأسماء المستخدمين، الطلبات المهمة، الملفات، الصور، الأكواد، والقرارات. اجعل التلخيص كذاكرة طويلة المدى دقيقة لبوت.`,
+          },
+          { role: "user", content: compact },
+        ],
+        "google/gemini-2.5-flash-lite",
+      );
     } catch {
       // fallback: نص خام مختصر
       summary = compact.slice(0, 4000);
     }
     longTermCache.set(chatId, { until: Date.now() + 10 * 60 * 1000, summary, upto: olderThan });
+    await saveMemorySummary(chatId, summary, olderThan).catch((e) => console.error("[mem] summary save failed", e));
     return summary;
-  } catch (e) { console.error("[mem] long-term failed", e); return ""; }
+  } catch (e) {
+    console.error("[mem] long-term failed", e);
+    return "";
+  }
 }
 
 // ============ Web search (Grounding) ============
-async function webSearch(query: string): Promise<Array<{ title: string; url: string; snippet: string }>> {
+async function webSearch(
+  query: string,
+): Promise<Array<{ title: string; url: string; snippet: string }>> {
   const q = encodeURIComponent(query);
   try {
     const r = await fetch(`https://duckduckgo.com/html/?q=${q}&kl=wt-wt`, {
@@ -169,14 +267,30 @@ async function webSearch(query: string): Promise<Array<{ title: string; url: str
     if (!r.ok) return [];
     const html = await r.text();
     const out: Array<{ title: string; url: string; snippet: string }> = [];
-    const blockRe = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+    const blockRe =
+      /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
     let m: RegExpExecArray | null;
     while ((m = blockRe.exec(html)) !== null && out.length < 6) {
-      const strip = (s: string) => s.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").trim();
+      const strip = (s: string) =>
+        s
+          .replace(/<[^>]+>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+          .replace(/&#x27;/g, "'")
+          .trim();
       let url = m[1];
       // DuckDuckGo يلف الروابط بـ /l/?uddg=...
       const uddg = url.match(/[?&]uddg=([^&]+)/);
-      if (uddg) { try { url = decodeURIComponent(uddg[1]); } catch { /* ignore */ } }
+      if (uddg) {
+        try {
+          url = decodeURIComponent(uddg[1]);
+        } catch {
+          /* ignore */
+        }
+      }
       out.push({ title: strip(m[2]).slice(0, 180), url, snippet: strip(m[3]).slice(0, 320) });
     }
     return out;
@@ -186,13 +300,13 @@ async function webSearch(query: string): Promise<Array<{ title: string; url: str
   }
 }
 
-
 // ============ Helpers ============
 function deriveSecret(token: string) {
   return createHash("sha256").update(`tg-webhook:${token}`).digest("base64url");
 }
 function safeEqual(a: string, b: string) {
-  const A = Buffer.from(a); const B = Buffer.from(b);
+  const A = Buffer.from(a);
+  const B = Buffer.from(b);
   return A.length === B.length && timingSafeEqual(A, B);
 }
 
@@ -205,7 +319,10 @@ async function tg(token: string, method: string, body: unknown) {
   return r.json() as Promise<any>;
 }
 async function tgForm(token: string, method: string, form: FormData) {
-  const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", body: form });
+  const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    body: form,
+  });
   return r.json() as Promise<any>;
 }
 async function tgGetFileUrl(token: string, fileId: string) {
@@ -227,9 +344,12 @@ async function getBotInfo(token: string) {
 async function startTyping(token: string, chatId: number, replyTo?: number) {
   await sendAction(token, chatId, "typing");
   const r: any = await tg(token, "sendMessage", {
-    chat_id: chatId, text: "⏳", reply_to_message_id: replyTo, allow_sending_without_reply: true,
+    chat_id: chatId,
+    text: "⏳",
+    reply_to_message_id: replyTo,
+    allow_sending_without_reply: true,
   });
-  return r.ok ? r.result.message_id as number : null;
+  return r.ok ? (r.result.message_id as number) : null;
 }
 async function stopTyping(token: string, chatId: number, mid: number | null) {
   if (mid == null) return;
@@ -239,11 +359,18 @@ async function stopTyping(token: string, chatId: number, mid: number | null) {
 // ============ AI Gateway ============
 // النموذج الافتراضي: أسرع نموذج Gemini للاستجابة الفورية
 const PRIMARY_CHAT_MODEL = "google/gemini-2.5-flash-lite";
-const CHEAP_CHAT_MODELS = [PRIMARY_CHAT_MODEL, "google/gemini-3.1-flash-lite", "google/gemini-2.5-flash", "google/gemini-3-flash-preview"];
+const CHEAP_CHAT_MODELS = [
+  PRIMARY_CHAT_MODEL,
+  "google/gemini-3.1-flash-lite",
+  "google/gemini-2.5-flash",
+  "google/gemini-3-flash-preview",
+];
 
 function isAiUnavailableError(error: unknown) {
   const msg = String((error as any)?.message ?? error ?? "");
-  return /AI\s*402|not enough credits|insufficient credits|credit|quota|Payment Required/i.test(msg);
+  return /AI\s*402|not enough credits|insufficient credits|credit|quota|Payment Required/i.test(
+    msg,
+  );
 }
 
 function friendlyAiError(error: unknown) {
@@ -294,14 +421,22 @@ function toGeminiParts(content: any): any[] {
 async function geminiDirectChat(messages: any[]): Promise<string> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY missing");
-  const systemMessages = messages.filter(m => m.role === "system");
-  const convo = messages.filter(m => m.role !== "system");
-  const contents = convo.map(m => ({
+  const systemMessages = messages.filter((m) => m.role === "system");
+  const convo = messages.filter((m) => m.role !== "system");
+  const contents = convo.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: toGeminiParts(m.content),
   }));
   const systemInstruction = systemMessages.length
-    ? { parts: [{ text: systemMessages.map(m => (typeof m.content === "string" ? m.content : "")).join("\n\n") }] }
+    ? {
+        parts: [
+          {
+            text: systemMessages
+              .map((m) => (typeof m.content === "string" ? m.content : ""))
+              .join("\n\n"),
+          },
+        ],
+      }
     : undefined;
   let lastErr = "";
   for (const model of GEMINI_CHAT_MODELS) {
@@ -321,9 +456,17 @@ async function geminiDirectChat(messages: any[]): Promise<string> {
         }),
       });
       const txt = await r.text();
-      if (!r.ok) { lastErr = `[gemini-direct ${model}] ${r.status}: ${txt.slice(0, 300)}`; console.error(lastErr); continue; }
+      if (!r.ok) {
+        lastErr = `[gemini-direct ${model}] ${r.status}: ${txt.slice(0, 300)}`;
+        console.error(lastErr);
+        continue;
+      }
       const data = JSON.parse(txt);
-      const out = data.candidates?.[0]?.content?.parts?.map((p: any) => p.text).filter(Boolean).join("") ?? "";
+      const out =
+        data.candidates?.[0]?.content?.parts
+          ?.map((p: any) => p.text)
+          .filter(Boolean)
+          .join("") ?? "";
       if (out) return out;
       lastErr = `[gemini-direct ${model}] لا نص`;
     } catch (e: any) {
@@ -356,7 +499,11 @@ async function geminiDirectImage(prompt: string, inputImageDataUrl?: string): Pr
         }),
       });
       const txt = await r.text();
-      if (!r.ok) { lastErr = `[gemini-img ${model}] ${r.status}: ${txt.slice(0, 300)}`; console.error(lastErr); continue; }
+      if (!r.ok) {
+        lastErr = `[gemini-img ${model}] ${r.status}: ${txt.slice(0, 300)}`;
+        console.error(lastErr);
+        continue;
+      }
       const data = JSON.parse(txt);
       const partsOut = data.candidates?.[0]?.content?.parts ?? [];
       for (const p of partsOut) {
@@ -387,7 +534,10 @@ async function aiChat(messages: any[], model?: string) {
     if (!r.ok) {
       lastErr = `AI ${r.status}: ${txt}`;
       console.error("[ai-chat]", currentModel, lastErr.slice(0, 500));
-      if (r.status === 402) { hit402 = true; break; }
+      if (r.status === 402) {
+        hit402 = true;
+        break;
+      }
       continue;
     }
     const data = JSON.parse(txt);
@@ -410,9 +560,22 @@ async function aiImage(prompt: string): Promise<Buffer> {
   const key = process.env.LOVABLE_API_KEY!;
   // Try models in order; surface real errors
   const attempts: Array<{ model: string; body: any }> = [
-    { model: "google/gemini-2.5-flash-image", body: { model: "google/gemini-2.5-flash-image", messages: [{ role: "user", content: prompt }], modalities: ["image", "text"] } },
-    { model: "google/gemini-3.1-flash-image", body: { model: "google/gemini-3.1-flash-image", prompt, size: "1024x1024", n: 1 } },
-    { model: "google/gemini-3-pro-image", body: { model: "google/gemini-3-pro-image", prompt, size: "1024x1024", n: 1 } },
+    {
+      model: "google/gemini-2.5-flash-image",
+      body: {
+        model: "google/gemini-2.5-flash-image",
+        messages: [{ role: "user", content: prompt }],
+        modalities: ["image", "text"],
+      },
+    },
+    {
+      model: "google/gemini-3.1-flash-image",
+      body: { model: "google/gemini-3.1-flash-image", prompt, size: "1024x1024", n: 1 },
+    },
+    {
+      model: "google/gemini-3-pro-image",
+      body: { model: "google/gemini-3-pro-image", prompt, size: "1024x1024", n: 1 },
+    },
   ];
   let lastErr = "";
   for (const a of attempts) {
@@ -431,7 +594,10 @@ async function aiImage(prompt: string): Promise<Buffer> {
       }
       const data = JSON.parse(txt);
       const b64 = data.data?.[0]?.b64_json;
-      if (!b64) { lastErr = `[${a.model}] لا توجد بيانات صورة`; continue; }
+      if (!b64) {
+        lastErr = `[${a.model}] لا توجد بيانات صورة`;
+        continue;
+      }
       return Buffer.from(b64, "base64");
     } catch (e: any) {
       lastErr = `[${a.model}] ${e?.message ?? e}`;
@@ -439,8 +605,12 @@ async function aiImage(prompt: string): Promise<Buffer> {
     }
   }
   if (process.env.GEMINI_API_KEY) {
-    try { console.log("[img] fallback → Gemini direct"); return await geminiDirectImage(prompt); }
-    catch (e: any) { lastErr = `${lastErr} | gemini-direct: ${e?.message ?? e}`; }
+    try {
+      console.log("[img] fallback → Gemini direct");
+      return await geminiDirectImage(prompt);
+    } catch (e: any) {
+      lastErr = `${lastErr} | gemini-direct: ${e?.message ?? e}`;
+    }
   }
   throw new Error(lastErr || "فشل توليد الصورة");
 }
@@ -458,13 +628,18 @@ async function aiEditImage(imageDataUrl: string, prompt: string): Promise<Buffer
     try {
       const body = {
         model: a.model,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "text", text: `عدّل هذه الصورة حسب الطلب التالي وأرجع صورة معدّلة فقط: ${prompt}` },
-            { type: "image_url", image_url: { url: imageDataUrl } },
-          ],
-        }],
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `عدّل هذه الصورة حسب الطلب التالي وأرجع صورة معدّلة فقط: ${prompt}`,
+              },
+              { type: "image_url", image_url: { url: imageDataUrl } },
+            ],
+          },
+        ],
         modalities: ["image", "text"],
       };
       const r = await fetch(`${GATEWAY}/chat/completions`, {
@@ -486,15 +661,24 @@ async function aiEditImage(imageDataUrl: string, prompt: string): Promise<Buffer
       let b64: string | undefined;
       for (const im of images) {
         const u = im?.image_url?.url ?? im?.url;
-        if (typeof u === "string" && u.startsWith("data:image")) { b64 = u.split(",")[1]; break; }
+        if (typeof u === "string" && u.startsWith("data:image")) {
+          b64 = u.split(",")[1];
+          break;
+        }
       }
       if (!b64 && Array.isArray(msg?.content)) {
         for (const part of msg.content) {
           const u = part?.image_url?.url;
-          if (typeof u === "string" && u.startsWith("data:image")) { b64 = u.split(",")[1]; break; }
+          if (typeof u === "string" && u.startsWith("data:image")) {
+            b64 = u.split(",")[1];
+            break;
+          }
         }
       }
-      if (!b64) { lastErr = `[${a.model}] لم يرجع صورة`; continue; }
+      if (!b64) {
+        lastErr = `[${a.model}] لم يرجع صورة`;
+        continue;
+      }
       return Buffer.from(b64, "base64");
     } catch (e: any) {
       lastErr = `[${a.model}] ${e?.message ?? e}`;
@@ -502,16 +686,25 @@ async function aiEditImage(imageDataUrl: string, prompt: string): Promise<Buffer
     }
   }
   if (process.env.GEMINI_API_KEY) {
-    try { console.log("[img-edit] fallback → Gemini direct"); return await geminiDirectImage(prompt, imageDataUrl); }
-    catch (e: any) { lastErr = `${lastErr} | gemini-direct: ${e?.message ?? e}`; }
+    try {
+      console.log("[img-edit] fallback → Gemini direct");
+      return await geminiDirectImage(prompt, imageDataUrl);
+    } catch (e: any) {
+      lastErr = `${lastErr} | gemini-direct: ${e?.message ?? e}`;
+    }
   }
   throw new Error(lastErr || "فشل تعديل الصورة");
 }
 
 // ============ System prompt ============
 function systemPrompt(opts: {
-  userId: number; isGroup: boolean; isDev: boolean; isAdmin: boolean;
-  chatTitle?: string; userName?: string; userUsername?: string;
+  userId: number;
+  isGroup: boolean;
+  isDev: boolean;
+  isAdmin: boolean;
+  chatTitle?: string;
+  userName?: string;
+  userUsername?: string;
 }) {
   const { isDev, isGroup, isAdmin, chatTitle, userName, userUsername } = opts;
   const now = baghdadNow();
@@ -554,8 +747,13 @@ const FORBIDDEN_PATTERNS = [
   /https?:\/\/\S+/i,
   /t\.me\/\S+/i,
   /@[A-Za-z0-9_]{4,}/,
-  /تباد[ل]?/i, /ترويج/i, /اشترك\s*ب?قناة/i, /قناتي/i, /بوتي/i,
-  /اكتبل?ي?\s*خاص/i, /راسلني\s*خاص/i,
+  /تباد[ل]?/i,
+  /ترويج/i,
+  /اشترك\s*ب?قناة/i,
+  /قناتي/i,
+  /بوتي/i,
+  /اكتبل?ي?\s*خاص/i,
+  /راسلني\s*خاص/i,
 ];
 function violatesRules(text: string): string | null {
   if (!text) return null;
@@ -587,12 +785,28 @@ function detectFile(prompt: string): { name: string; mime: string } {
 }
 function mimeFor(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  const map: Record<string,string> = {
-    py:"text/x-python", js:"text/javascript", ts:"text/typescript", tsx:"text/typescript", jsx:"text/javascript",
-    html:"text/html", css:"text/css", json:"application/json", sh:"text/x-shellscript", sql:"text/plain",
-    go:"text/x-go", rs:"text/rust", cpp:"text/x-c++src", c:"text/x-csrc", java:"text/x-java",
-    md:"text/markdown", yml:"text/yaml", yaml:"text/yaml", xml:"application/xml", csv:"text/csv",
-    txt:"text/plain;charset=utf-8",
+  const map: Record<string, string> = {
+    py: "text/x-python",
+    js: "text/javascript",
+    ts: "text/typescript",
+    tsx: "text/typescript",
+    jsx: "text/javascript",
+    html: "text/html",
+    css: "text/css",
+    json: "application/json",
+    sh: "text/x-shellscript",
+    sql: "text/plain",
+    go: "text/x-go",
+    rs: "text/rust",
+    cpp: "text/x-c++src",
+    c: "text/x-csrc",
+    java: "text/x-java",
+    md: "text/markdown",
+    yml: "text/yaml",
+    yaml: "text/yaml",
+    xml: "application/xml",
+    csv: "text/csv",
+    txt: "text/plain;charset=utf-8",
   };
   return map[ext] ?? "text/plain;charset=utf-8";
 }
@@ -601,11 +815,23 @@ function mimeFor(name: string): string {
 function redactSecrets(input: string) {
   return input
     .replace(/\b\d{8,12}:[A-Za-z0-9_-]{20,}\b/g, "[telegram-token-hidden]")
-    .replace(/((?:TOKEN|KEY|SECRET|PASSWORD|PASS|API_KEY)[A-Z0-9_\-]*\s*[:=]\s*)["']?[^"'\s]+/gi, "$1[hidden]");
+    .replace(
+      /((?:TOKEN|KEY|SECRET|PASSWORD|PASS|API_KEY)[A-Z0-9_\-]*\s*[:=]\s*)["']?[^"'\s]+/gi,
+      "$1[hidden]",
+    );
 }
 
 function decodePdfString(raw: string) {
-  const escapes: Record<string, string> = { n: "\n", r: "\r", t: "\t", b: "\b", f: "\f", "(": "(", ")": ")", "\\": "\\" };
+  const escapes: Record<string, string> = {
+    n: "\n",
+    r: "\r",
+    t: "\t",
+    b: "\b",
+    f: "\f",
+    "(": "(",
+    ")": ")",
+    "\\": "\\",
+  };
   return raw
     .slice(1, -1)
     .replace(/\\([nrtbf()\\])/g, (_, ch: string) => escapes[ch] ?? ch)
@@ -632,46 +858,90 @@ function extractPdfLooseText(buf: Buffer): string {
     if (!/FlateDecode/.test(before)) continue;
     try {
       scan(inflateSync(Buffer.from(m[1], "latin1")).toString("latin1"));
-    } catch { /* many PDF streams are not plain deflate; skip safely */ }
+    } catch {
+      /* many PDF streams are not plain deflate; skip safely */
+    }
   }
-  return redactSecrets([...new Set(out)].join("\n")).replace(/\n{3,}/g, "\n\n").trim();
+  return redactSecrets([...new Set(out)].join("\n"))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function detectLang(name: string, kind = "") {
   const ext = name.split(".").pop()?.toLowerCase() || kind.toLowerCase();
   const map: Record<string, string> = {
-    py: "Python", js: "JavaScript", ts: "TypeScript", tsx: "React TSX", jsx: "React JSX", html: "HTML", css: "CSS",
-    json: "JSON", sh: "Bash", sql: "SQL", go: "Go", rs: "Rust", cpp: "C++", c: "C", java: "Java",
-    md: "Markdown", txt: "Text", pdf: "PDF", docx: "Word DOCX", csv: "CSV", xml: "XML", yml: "YAML", yaml: "YAML",
+    py: "Python",
+    js: "JavaScript",
+    ts: "TypeScript",
+    tsx: "React TSX",
+    jsx: "React JSX",
+    html: "HTML",
+    css: "CSS",
+    json: "JSON",
+    sh: "Bash",
+    sql: "SQL",
+    go: "Go",
+    rs: "Rust",
+    cpp: "C++",
+    c: "C",
+    java: "Java",
+    md: "Markdown",
+    txt: "Text",
+    pdf: "PDF",
+    docx: "Word DOCX",
+    csv: "CSV",
+    xml: "XML",
+    yml: "YAML",
+    yaml: "YAML",
   };
   return map[ext] ?? (kind || "ملف نصي");
 }
 
 function codeSignals(text: string) {
   const safe = redactSecrets(text);
-  const imports = [...new Set([
-    ...safe.matchAll(/^\s*(?:import|from)\s+([^\n;]+)/gm),
-    ...safe.matchAll(/^\s*(?:const|let|var)\s+\w+\s*=\s*require\(([^)]+)\)/gm),
-    ...safe.matchAll(/^\s*#include\s+[<"]([^>"]+)/gm),
-  ].map((m) => m[1].trim()).filter(Boolean))].slice(0, 12);
-  const funcs = [...new Set([
-    ...safe.matchAll(/^\s*(?:async\s+)?function\s+([\w$]+)/gm),
-    ...safe.matchAll(/^\s*(?:export\s+)?(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s*)?\(/gm),
-    ...safe.matchAll(/^\s*(?:def|class)\s+([\w_]+)/gm),
-    ...safe.matchAll(/^\s*(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\]]+\s+([\w_]+)\s*\(/gm),
-  ].map((m) => m[1].trim()).filter(Boolean))].slice(0, 18);
+  const imports = [
+    ...new Set(
+      [
+        ...safe.matchAll(/^\s*(?:import|from)\s+([^\n;]+)/gm),
+        ...safe.matchAll(/^\s*(?:const|let|var)\s+\w+\s*=\s*require\(([^)]+)\)/gm),
+        ...safe.matchAll(/^\s*#include\s+[<"]([^>"]+)/gm),
+      ]
+        .map((m) => m[1].trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 12);
+  const funcs = [
+    ...new Set(
+      [
+        ...safe.matchAll(/^\s*(?:async\s+)?function\s+([\w$]+)/gm),
+        ...safe.matchAll(/^\s*(?:export\s+)?(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s*)?\(/gm),
+        ...safe.matchAll(/^\s*(?:def|class)\s+([\w_]+)/gm),
+        ...safe.matchAll(
+          /^\s*(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\]]+\s+([\w_]+)\s*\(/gm,
+        ),
+      ]
+        .map((m) => m[1].trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 18);
   const warnings: string[] = [];
   if (/\beval\s*\(/.test(safe)) warnings.push("استخدام eval خطر وقد يفتح تنفيذ كود غير موثوق.");
-  if (/\bexec\s*\(|shell\s*=\s*true/i.test(safe)) warnings.push("تنفيذ أوامر نظام يحتاج تحقق قوي من المدخلات.");
-  if (/innerHTML\s*=|document\.write\s*\(/.test(safe)) warnings.push("تعديل HTML مباشر قد يسبب XSS إذا دخل المستخدم غير منظّف.");
+  if (/\bexec\s*\(|shell\s*=\s*true/i.test(safe))
+    warnings.push("تنفيذ أوامر نظام يحتاج تحقق قوي من المدخلات.");
+  if (/innerHTML\s*=|document\.write\s*\(/.test(safe))
+    warnings.push("تعديل HTML مباشر قد يسبب XSS إذا دخل المستخدم غير منظّف.");
   if (/TODO|FIXME|HACK/i.test(safe)) warnings.push("توجد TODO/FIXME تحتاج متابعة.");
-  if (/(TOKEN|SECRET|PASSWORD|API_KEY)\s*[:=]/i.test(safe)) warnings.push("يوجد احتمال أسرار/مفاتيح داخل الملف — لا تشاركها علناً.");
-  if (!/try\s*\{|catch\s*\(|except\s+|\.catch\s*\(/.test(safe) && safe.length > 1500) warnings.push("معالجة الأخطاء قليلة أو غير واضحة.");
+  if (/(TOKEN|SECRET|PASSWORD|API_KEY)\s*[:=]/i.test(safe))
+    warnings.push("يوجد احتمال أسرار/مفاتيح داخل الملف — لا تشاركها علناً.");
+  if (!/try\s*\{|catch\s*\(|except\s+|\.catch\s*\(/.test(safe) && safe.length > 1500)
+    warnings.push("معالجة الأخطاء قليلة أو غير واضحة.");
   return { imports, funcs, warnings };
 }
 
 function offlineStructuredSummary(name: string, kind: string, text: string, ask = "", note = "") {
-  const clean = redactSecrets(text || "").replace(/\u0000/g, "").trim();
+  const clean = redactSecrets(text || "")
+    .replace(/\u0000/g, "")
+    .trim();
   const lines = clean ? clean.split(/\r?\n/) : [];
   const nonEmpty = lines.filter((l) => l.trim()).length;
   const words = clean ? (clean.match(/[\p{L}\p{N}_]+/gu) ?? []).length : 0;
@@ -689,10 +959,16 @@ function offlineStructuredSummary(name: string, kind: string, text: string, ask 
     `\n**النوع:** ${lang}`,
     `**الحجم التقريبي:** ${lines.length} سطر / ${nonEmpty} سطر فعلي / ${words} كلمة`,
     ask ? `**طلبك:** ${ask.slice(0, 250)}` : "",
-    funcs.length ? `\n**الدوال/الكلاسات المهمة:**\n- ${funcs.join("\n- ")}` : "\n**الدوال/الكلاسات المهمة:** ما ظهرت بوضوح من الفحص المحلي.",
+    funcs.length
+      ? `\n**الدوال/الكلاسات المهمة:**\n- ${funcs.join("\n- ")}`
+      : "\n**الدوال/الكلاسات المهمة:** ما ظهرت بوضوح من الفحص المحلي.",
     imports.length ? `\n**المكتبات/الاعتماديات:**\n- ${imports.join("\n- ")}` : "",
-    warnings.length ? `\n**ملاحظات وأخطاء محتملة:**\n- ${warnings.join("\n- ")}` : "\n**ملاحظات وأخطاء محتملة:** ماكو مشاكل واضحة من الفحص المحلي السريع.",
-    preview ? `\n**ملخص المحتوى:**\n- ${preview}` : "\n**ملخص المحتوى:** النص غير كافي أو مشفّر/ثنائي وما ينقرأ محلياً بالكامل.",
+    warnings.length
+      ? `\n**ملاحظات وأخطاء محتملة:**\n- ${warnings.join("\n- ")}`
+      : "\n**ملاحظات وأخطاء محتملة:** ماكو مشاكل واضحة من الفحص المحلي السريع.",
+    preview
+      ? `\n**ملخص المحتوى:**\n- ${preview}`
+      : "\n**ملخص المحتوى:** النص غير كافي أو مشفّر/ثنائي وما ينقرأ محلياً بالكامل.",
     "\n**اقتراحات:** راجع المدخلات، معالجة الأخطاء، الأسرار، والصلاحيات قبل التشغيل.",
   ].filter(Boolean);
   return parts.join("\n").slice(0, 3900);
@@ -701,7 +977,25 @@ function offlineStructuredSummary(name: string, kind: string, text: string, ask 
 function commentBlock(name: string, text: string) {
   const ext = name.split(".").pop()?.toLowerCase();
   if (["html", "xml"].includes(ext || "")) return `<!-- ${text} -->`;
-  if (["css", "js", "ts", "tsx", "jsx", "java", "c", "cpp", "h", "hpp", "go", "rs", "swift", "kt"].includes(ext || "")) return `/* ${text} */`;
+  if (
+    [
+      "css",
+      "js",
+      "ts",
+      "tsx",
+      "jsx",
+      "java",
+      "c",
+      "cpp",
+      "h",
+      "hpp",
+      "go",
+      "rs",
+      "swift",
+      "kt",
+    ].includes(ext || "")
+  )
+    return `/* ${text} */`;
   if (["py", "sh", "rb", "php", "yml", "yaml", "toml"].includes(ext || "")) return `# ${text}`;
   return text;
 }
@@ -709,20 +1003,29 @@ function commentBlock(name: string, text: string) {
 function makeOfflineFile(name: string, desc: string) {
   const ext = name.split(".").pop()?.toLowerCase();
   const safeDesc = redactSecrets(desc).slice(0, 500);
-  if (ext === "py") return `#!/usr/bin/env python3\n\"\"\"\n${safeDesc}\n\"\"\"\n\nfrom __future__ import annotations\n\n\ndef main() -> None:\n    print("Ready: ${safeDesc.replace(/"/g, "'") || "script"}")\n\n\nif __name__ == "__main__":\n    main()\n`;
-  if (ext === "js") return `#!/usr/bin/env node\n\"use strict\";\n\n// ${safeDesc}\n\nfunction main() {\n  console.log("Ready: ${safeDesc.replace(/"/g, "'") || "script"}");\n}\n\nmain();\n`;
-  if (ext === "ts") return `// ${safeDesc}\n\nfunction main(): void {\n  console.log("Ready: ${safeDesc.replace(/"/g, "'") || "script"}");\n}\n\nmain();\n`;
-  if (ext === "html") return `<!doctype html>\n<html lang="ar" dir="rtl">\n<head>\n  <meta charset="utf-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1" />\n  <title>${safeDesc || "صفحة"}</title>\n</head>\n<body>\n  <main>\n    <h1>${safeDesc || "جاهز"}</h1>\n  </main>\n</body>\n</html>\n`;
-  if (ext === "css") return `/* ${safeDesc} */\n:root {\n  color-scheme: light dark;\n  font-family: system-ui, sans-serif;\n}\n\nbody {\n  margin: 0;\n  min-height: 100vh;\n}\n`;
-  if (ext === "sh") return `#!/usr/bin/env bash\nset -euo pipefail\n\n# ${safeDesc}\necho "Ready: ${safeDesc.replace(/"/g, "'") || "script"}"\n`;
-  if (ext === "json") return JSON.stringify({ description: safeDesc, generated_offline: true }, null, 2) + "\n";
+  if (ext === "py")
+    return `#!/usr/bin/env python3\n\"\"\"\n${safeDesc}\n\"\"\"\n\nfrom __future__ import annotations\n\n\ndef main() -> None:\n    print("Ready: ${safeDesc.replace(/"/g, "'") || "script"}")\n\n\nif __name__ == "__main__":\n    main()\n`;
+  if (ext === "js")
+    return `#!/usr/bin/env node\n\"use strict\";\n\n// ${safeDesc}\n\nfunction main() {\n  console.log("Ready: ${safeDesc.replace(/"/g, "'") || "script"}");\n}\n\nmain();\n`;
+  if (ext === "ts")
+    return `// ${safeDesc}\n\nfunction main(): void {\n  console.log("Ready: ${safeDesc.replace(/"/g, "'") || "script"}");\n}\n\nmain();\n`;
+  if (ext === "html")
+    return `<!doctype html>\n<html lang="ar" dir="rtl">\n<head>\n  <meta charset="utf-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1" />\n  <title>${safeDesc || "صفحة"}</title>\n</head>\n<body>\n  <main>\n    <h1>${safeDesc || "جاهز"}</h1>\n  </main>\n</body>\n</html>\n`;
+  if (ext === "css")
+    return `/* ${safeDesc} */\n:root {\n  color-scheme: light dark;\n  font-family: system-ui, sans-serif;\n}\n\nbody {\n  margin: 0;\n  min-height: 100vh;\n}\n`;
+  if (ext === "sh")
+    return `#!/usr/bin/env bash\nset -euo pipefail\n\n# ${safeDesc}\necho "Ready: ${safeDesc.replace(/"/g, "'") || "script"}"\n`;
+  if (ext === "json")
+    return JSON.stringify({ description: safeDesc, generated_offline: true }, null, 2) + "\n";
   return `${commentBlock(name, `Generated offline: ${safeDesc}`)}\n`;
 }
 
 function applyOfflineEdit(original: string, instructions: string, name: string) {
   let edited = original;
   let changed = false;
-  const replace = instructions.match(/(?:بدل|استبدل|غير|غيّر)\s+["'“”]?(.{1,120}?)["'“”]?\s+(?:ب|الى|إلى|لـ|ل)\s+["'“”]?(.{1,120})["'“”]?$/i);
+  const replace = instructions.match(
+    /(?:بدل|استبدل|غير|غيّر)\s+["'“”]?(.{1,120}?)["'“”]?\s+(?:ب|الى|إلى|لـ|ل)\s+["'“”]?(.{1,120})["'“”]?$/i,
+  );
   if (replace) {
     const from = replace[1].trim();
     const to = replace[2].trim();
@@ -734,7 +1037,10 @@ function applyOfflineEdit(original: string, instructions: string, name: string) 
   const del = instructions.match(/(?:احذف|حذف)\s+["'“”]?(.{1,120})["'“”]?$/i);
   if (!changed && del) {
     const needle = del[1].trim();
-    edited = edited.split(/\r?\n/).filter((line) => !line.includes(needle)).join("\n");
+    edited = edited
+      .split(/\r?\n/)
+      .filter((line) => !line.includes(needle))
+      .join("\n");
     changed = edited !== original;
   }
   const addEnd = instructions.match(/(?:اضف|أضف)\s+(.{1,500})\s+(?:بالنهاية|نهاية|اخر|آخر)/i);
@@ -751,16 +1057,21 @@ function applyOfflineEdit(original: string, instructions: string, name: string) 
 function offlineChatReply(text: string, isGroup: boolean, userName: string) {
   const clean = redactSecrets(text).trim();
   if (/^(هلا|سلام|شلونك|مرحبا|هاي)\b/i.test(clean)) return `هلا ${userName} 😂 موجودة وياك. شلونك؟`;
-  if (/قوانين|ممنوع|rules/i.test(clean)) return "قوانين المجموعة: ممنوع روابط، ترويج، تبادل، سب، أو طلب خاص للتبادل. المخالف ينحذف كلامه وقد ينكتم/ينطرد.";
-  if (/ملف|كود|سكربت|برمج|python|javascript|html|css/i.test(clean)) return "دز الأمر بصيغة /file script.py وصف السكربت، وأجهز لك ملف برمجي وأرسله مباشرة.";
-  if (/صورة|img|image/i.test(clean)) return "اكتب /img وبعدها وصف الصورة، أو دز صورة ويا /عدل حتى أعدلها حسب طلبك.";
+  if (/قوانين|ممنوع|rules/i.test(clean))
+    return "قوانين المجموعة: ممنوع روابط، ترويج، تبادل، سب، أو طلب خاص للتبادل. المخالف ينحذف كلامه وقد ينكتم/ينطرد.";
+  if (/ملف|كود|سكربت|برمج|python|javascript|html|css/i.test(clean))
+    return "دز الأمر بصيغة /file script.py وصف السكربت، وأجهز لك ملف برمجي وأرسله مباشرة.";
+  if (/صورة|img|image/i.test(clean))
+    return "اكتب /img وبعدها وصف الصورة، أو دز صورة ويا /عدل حتى أعدلها حسب طلبك.";
   return isGroup
     ? "سمعتك 😂 اكتب طلبك واضح وأنا وياك."
     : `تمام ${userName}، آني موجودة وياك. شتريد أسويلك؟`;
 }
 
 function makeOfflineSvg(prompt: string) {
-  const safe = redactSecrets(prompt).replace(/[<&>]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c] ?? c)).slice(0, 220);
+  const safe = redactSecrets(prompt)
+    .replace(/[<&>]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c] ?? c)
+    .slice(0, 220);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
     <linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="#0f766e"/></linearGradient>
@@ -786,10 +1097,54 @@ function extractDocxText(buf: Buffer): string {
     const text = withBreaks.replace(/<[^>]+>/g, "");
     parts.push(text);
   }
-  return parts.join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return parts
+    .join("\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
-async function analyzeDocument(token: string, doc: any, userCaption: string, sysPrompt: string): Promise<string> {
+async function analyzeDocumentWithOrchestrator(
+  ownerId: number,
+  chatId: number,
+  name: string,
+  kind: string,
+  content: string,
+  ask: string,
+  sysPrompt: string,
+): Promise<string> {
+  try {
+    const { runOrchestrator } = await import("@/lib/alyssa/orchestrator.server");
+    const result = await runOrchestrator({
+      ownerId,
+      chatId,
+      fileNames: [name],
+      messages: [
+        { role: "system", content: sysPrompt },
+        { role: "user", content: `محتوى الملف "${name}" (${kind}):\n\n${content}\n\n${ask}` },
+      ],
+    });
+    return result.text || offlineStructuredSummary(name, kind, content, ask);
+  } catch (error) {
+    console.error("[orchestrator] document analysis failed", error);
+    return offlineStructuredSummary(
+      name,
+      kind,
+      content,
+      ask,
+      "تعذر تشغيل orchestrator؛ هذا تحليل محلي محدود.",
+    );
+  }
+}
+
+async function analyzeDocument(
+  ownerId: number,
+  chatId: number,
+  token: string,
+  doc: any,
+  userCaption: string,
+  sysPrompt: string,
+): Promise<string> {
   const name: string = doc.file_name ?? "file";
   const mime: string = doc.mime_type ?? "";
   const url = await tgGetFileUrl(token, doc.file_id);
@@ -797,85 +1152,142 @@ async function analyzeDocument(token: string, doc: any, userCaption: string, sys
   const arr = await resp.arrayBuffer();
   const buf = Buffer.from(arr);
   const lower = name.toLowerCase();
-  const ask = userCaption?.trim() || `حلل هذا الملف "${name}" بالتفصيل: شنو يسوي، نقاط القوة، الأخطاء أو الثغرات، اقتراحات تحسين، وملخص نهائي.`;
+  const ask =
+    userCaption?.trim() ||
+    `حلل هذا الملف "${name}" بالتفصيل: شنو يسوي، نقاط القوة، الأخطاء أو الثغرات، اقتراحات تحسين، وملخص نهائي.`;
 
   // ZIP projects: inspect the real archive and send only bounded text context to the model.
   if (mime === "application/zip" || lower.endsWith(".zip")) {
     const files = unzipSync(new Uint8Array(buf));
-    const textExts = new Set(["txt", "md", "json", "csv", "xml", "yml", "yaml", "ini", "env", "py", "js", "ts", "tsx", "jsx", "html", "css", "sh", "sql", "go", "rs", "java", "kt", "toml"]);
-    const entries = Object.entries(files).filter(([path, content]) => content.length > 0 && !path.endsWith("/") && textExts.has(path.split(".").pop()?.toLowerCase() ?? ""));
-    const tree = Object.keys(files).filter((path) => !path.endsWith("/")).slice(0, 300).join("\n");
+    const textExts = new Set([
+      "txt",
+      "md",
+      "json",
+      "csv",
+      "xml",
+      "yml",
+      "yaml",
+      "ini",
+      "env",
+      "py",
+      "js",
+      "ts",
+      "tsx",
+      "jsx",
+      "html",
+      "css",
+      "sh",
+      "sql",
+      "go",
+      "rs",
+      "java",
+      "kt",
+      "toml",
+    ]);
+    const entries = Object.entries(files).filter(
+      ([path, content]) =>
+        content.length > 0 &&
+        !path.endsWith("/") &&
+        textExts.has(path.split(".").pop()?.toLowerCase() ?? ""),
+    );
+    const tree = Object.keys(files)
+      .filter((path) => !path.endsWith("/"))
+      .slice(0, 300)
+      .join("\n");
     const content = entries
       .slice(0, 80)
-      .map(([path, content]) => `===== ${path} =====\n${redactSecrets(strFromU8(content)).slice(0, 6000)}`)
+      .map(
+        ([path, content]) =>
+          `===== ${path} =====\n${redactSecrets(strFromU8(content)).slice(0, 6000)}`,
+      )
       .join("\n\n")
       .slice(0, 80000);
-    try {
-      return await aiChat([
-        { role: "system", content: sysPrompt },
-        { role: "user", content: `هذا مشروع ZIP اسمه "${name}". هذه شجرة الملفات:\n${tree}\n\nمحتوى الملفات النصية المتاح:\n${content}\n\n${ask}` },
-      ]);
-    } catch (e) {
-      if (!isAiUnavailableError(e)) throw e;
-      return offlineStructuredSummary(name, "zip", `${tree}\n\n${content}`, ask, "تحليل محلي محدود لمحتويات ZIP النصية.");
-    }
+    return analyzeDocumentWithOrchestrator(
+      ownerId,
+      chatId,
+      name,
+      "zip",
+      `شجرة الملفات:\n${tree}\n\nمحتوى الملفات النصية المتاح:\n${content}`,
+      ask,
+      sysPrompt,
+    );
   }
 
   // PDF → multimodal file input
   if (mime === "application/pdf" || lower.endsWith(".pdf")) {
-    const dataUrl = `data:application/pdf;base64,${buf.toString("base64")}`;
-    try {
-      return await aiChat([
-        { role: "system", content: sysPrompt },
-        { role: "user", content: [
-          { type: "text", text: ask },
-          { type: "file", file: { filename: name, file_data: dataUrl } },
-        ]},
-      ]);
-    } catch (e) {
-      if (!isAiUnavailableError(e)) throw e;
-      const loose = extractPdfLooseText(buf);
-      return offlineStructuredSummary(name, "pdf", loose, ask, "تحليل سريع مستخرج من نص PDF المتاح.");
-    }
+    const loose = extractPdfLooseText(buf);
+    return analyzeDocumentWithOrchestrator(
+      ownerId,
+      chatId,
+      name,
+      "pdf",
+      loose || "لم يُستخرج نص قابل للقراءة من ملف PDF.",
+      ask,
+      sysPrompt,
+    );
   }
 
   // DOCX → unzip + extract text
   if (lower.endsWith(".docx") || mime.includes("officedocument.wordprocessingml")) {
     let text = "";
-    try { text = extractDocxText(buf); } catch (e: any) { throw new Error("فشل قراءة DOCX: " + (e?.message ?? e)); }
+    try {
+      text = extractDocxText(buf);
+    } catch (e: any) {
+      throw new Error("فشل قراءة DOCX: " + (e?.message ?? e));
+    }
     if (!text) text = "(الملف فارغ أو ما كدرت أستخرج نص منه)";
     const truncated = text.slice(0, 80000);
-    try {
-      return await aiChat([
-        { role: "system", content: sysPrompt },
-        { role: "user", content: `محتوى مستند Word "${name}":\n\n${truncated}\n\n${ask}` },
-      ]);
-    } catch (e) {
-      if (!isAiUnavailableError(e)) throw e;
-      return offlineStructuredSummary(name, "docx", truncated, ask, "تحليل سريع لمحتوى DOCX المتاح.");
-    }
+    return analyzeDocumentWithOrchestrator(ownerId, chatId, name, "docx", truncated, ask, sysPrompt);
   }
 
   // TXT / code / json / md / csv / xml / yml ... → read as utf8 text
   const ext = lower.split(".").pop() ?? "";
-  const textExts = ["txt","md","markdown","json","csv","xml","yml","yaml","log","ini","env","py","js","ts","tsx","jsx","html","css","sh","sql","go","rs","cpp","c","h","hpp","java","kt","rb","php","swift","dart","lua","r","toml"];
+  const textExts = [
+    "txt",
+    "md",
+    "markdown",
+    "json",
+    "csv",
+    "xml",
+    "yml",
+    "yaml",
+    "log",
+    "ini",
+    "env",
+    "py",
+    "js",
+    "ts",
+    "tsx",
+    "jsx",
+    "html",
+    "css",
+    "sh",
+    "sql",
+    "go",
+    "rs",
+    "cpp",
+    "c",
+    "h",
+    "hpp",
+    "java",
+    "kt",
+    "rb",
+    "php",
+    "swift",
+    "dart",
+    "lua",
+    "r",
+    "toml",
+  ];
   if (textExts.includes(ext) || mime.startsWith("text/")) {
     const text = redactSecrets(buf.toString("utf8")).slice(0, 80000);
-    try {
-      return await aiChat([
-        { role: "system", content: sysPrompt },
-        { role: "user", content: `محتوى الملف "${name}" (${ext || mime}):\n\n\`\`\`\n${text}\n\`\`\`\n\n${ask}` },
-      ]);
-    } catch (e) {
-      if (!isAiUnavailableError(e)) throw e;
-      return offlineStructuredSummary(name, ext || mime, text, ask, "تحليل سريع للملف حتى يصلك الرد بدون تأخير.");
-    }
+    return analyzeDocumentWithOrchestrator(ownerId, chatId, name, ext || mime, text, ask, sysPrompt);
   }
 
-  throw new Error(`صيغة "${ext || mime}" غير مدعومة للتحليل النصي. الصيغ المدعومة: PDF, DOCX, TXT, وكل ملفات الكود.`);
+  throw new Error(
+    `صيغة "${ext || mime}" غير مدعومة للتحليل النصي. الصيغ المدعومة: PDF, DOCX, TXT, وكل ملفات الكود.`,
+  );
 }
-
-
 
 // ============ Main update handler ============
 async function handleUpdate(update: any, token: string) {
@@ -897,9 +1309,10 @@ async function handleUpdate(update: any, token: string) {
   }
 
   const msg = update.message ?? update.edited_message;
-  if (!msg) { console.log("[tg] no message in update"); return; }
-
-
+  if (!msg) {
+    console.log("[tg] no message in update");
+    return;
+  }
 
   const chatId: number = msg.chat.id;
   const chatType: string = msg.chat.type;
@@ -908,9 +1321,12 @@ async function handleUpdate(update: any, token: string) {
   const userName: string = msg.from?.first_name ?? msg.from?.username ?? "صديقي";
   const userUsername: string | undefined = msg.from?.username;
   const text: string = (msg.text ?? msg.caption ?? "").trim();
-  const isDev = userId === DEVELOPER_ID || (userUsername?.toLowerCase() === DEVELOPER_USERNAME.toLowerCase());
+  const isDev =
+    userId === DEVELOPER_ID || userUsername?.toLowerCase() === DEVELOPER_USERNAME.toLowerCase();
   const bot = await getBotInfo(token);
-  console.log(`[tg] msg from ${userId} (${userName}) in ${chatType} ${chatId}: "${text.slice(0,100)}"`);
+  console.log(
+    `[tg] msg from ${userId} (${userName}) in ${chatType} ${chatId}: "${text.slice(0, 100)}"`,
+  );
 
   if (userId) {
     const { upsertUser } = await import("@/lib/alyssa/store.server");
@@ -925,20 +1341,29 @@ async function handleUpdate(update: any, token: string) {
   // Track group membership for cross-context recall
   if (isGroup && userId) {
     const set = userGroups.get(userId) ?? new Set();
-    set.add(chatId); userGroups.set(userId, set);
+    set.add(chatId);
+    userGroups.set(userId, set);
   }
 
   // Save inbound to memory (only text) — persists to DB
   if (text && !text.startsWith("/")) {
-    await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: text });
+    await saveMsg({
+      chatId,
+      chatType,
+      userId: userId || null,
+      userName,
+      role: "user",
+      content: text,
+    });
   }
-
 
   // ===== Group moderation (skip dev) =====
   if (isGroup && !isDev && text) {
     const v = violatesRules(text);
     if (v) {
-      await tg(token, "deleteMessage", { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+      await tg(token, "deleteMessage", { chat_id: chatId, message_id: msg.message_id }).catch(
+        () => {},
+      );
       await tg(token, "sendMessage", {
         chat_id: chatId,
         text: `⚠️ ${userName} ${v} — يرجى الالتزام بقوانين المجموعة.`,
@@ -952,12 +1377,17 @@ async function handleUpdate(update: any, token: string) {
     {
       const isEditImgCmd = /^\/(عدل|edit-?img|editphoto|رتوش)\b/i.test(text);
       const target = msg.reply_to_message;
-      const editPhoto = msg.photo?.length ? msg.photo[msg.photo.length - 1] : (target?.photo?.length ? target.photo[target.photo.length - 1] : null);
+      const editPhoto = msg.photo?.length
+        ? msg.photo[msg.photo.length - 1]
+        : target?.photo?.length
+          ? target.photo[target.photo.length - 1]
+          : null;
       if (isEditImgCmd && editPhoto) {
         const typingId = await startTyping(token, chatId, msg.message_id);
         try {
           const instructions = text.replace(/^\/\S+\s*/, "").trim();
-          if (!instructions) throw new Error("اكتب شنو تريد تعدل بالصورة بعد الأمر.\nمثال: /عدل خلي الخلفية بحر");
+          if (!instructions)
+            throw new Error("اكتب شنو تريد تعدل بالصورة بعد الأمر.\nمثال: /عدل خلي الخلفية بحر");
           const fileUrl = await tgGetFileUrl(token, editPhoto.file_id);
           const img = await fetch(fileUrl);
           const buf = Buffer.from(await img.arrayBuffer());
@@ -968,19 +1398,45 @@ async function handleUpdate(update: any, token: string) {
           form.append("chat_id", String(chatId));
           form.append("caption", `✏️ تعديل: ${instructions.slice(0, 200)}`);
           if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
-          form.append("photo", new Blob([new Uint8Array(png)], { type: "image/png" }), "edited.png");
+          form.append(
+            "photo",
+            new Blob([new Uint8Array(png)], { type: "image/png" }),
+            "edited.png",
+          );
           const res = await tgForm(token, "sendPhoto", form);
           if (!res.ok) throw new Error(JSON.stringify(res));
-          await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب تعديل صورة] ${instructions}` });
-          await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[عدّلت الصورة وأرسلتها] الطلب: ${instructions}` });
+          await saveMsg({
+            chatId,
+            chatType,
+            userId: userId || null,
+            userName,
+            role: "user",
+            content: `[طلب تعديل صورة] ${instructions}`,
+          });
+          await saveMsg({
+            chatId,
+            chatType,
+            userId: null,
+            userName: BOT_NAME,
+            role: "assistant",
+            content: `[عدّلت الصورة وأرسلتها] الطلب: ${instructions}`,
+          });
         } catch (e: any) {
           await stopTyping(token, chatId, typingId);
-          await tg(token, "sendMessage", { chat_id: chatId, text: `فشل تعديل الصورة:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: `فشل تعديل الصورة:\n${e?.message ?? e}`,
+            reply_to_message_id: msg.message_id,
+          });
         }
         return;
       }
       if (isEditImgCmd && !editPhoto) {
-        await tg(token, "sendMessage", { chat_id: chatId, text: "دز صورة مع الكابشن /عدل <شنو تريد أغير>\nأو رد بالأمر على صورة موجودة 🖼️", reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: "دز صورة مع الكابشن /عدل <شنو تريد أغير>\nأو رد بالأمر على صورة موجودة 🖼️",
+          reply_to_message_id: msg.message_id,
+        });
         return;
       }
     }
@@ -1008,39 +1464,101 @@ async function handleUpdate(update: any, token: string) {
             form.append("chat_id", String(chatId));
             form.append("caption", `✏️ تعديل: ${text.slice(0, 200)}`);
             if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
-            form.append("photo", new Blob([new Uint8Array(png)], { type: "image/png" }), "edited.png");
+            form.append(
+              "photo",
+              new Blob([new Uint8Array(png)], { type: "image/png" }),
+              "edited.png",
+            );
             const res = await tgForm(token, "sendPhoto", form);
             if (!res.ok) throw new Error(JSON.stringify(res));
-            await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[صورة + طلب تعديل] ${text}` });
-            await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[عدّلت الصورة وأرسلتها] ${text}` });
+            await saveMsg({
+              chatId,
+              chatType,
+              userId: userId || null,
+              userName,
+              role: "user",
+              content: `[صورة + طلب تعديل] ${text}`,
+            });
+            await saveMsg({
+              chatId,
+              chatType,
+              userId: null,
+              userName: BOT_NAME,
+              role: "assistant",
+              content: `[عدّلت الصورة وأرسلتها] ${text}`,
+            });
             return;
           } catch (editErr) {
             // إذا فشل التعديل، حلل الصورة بدل ما نصمت
-            console.warn("[photo] edit failed, falling back to analyze:", (editErr as any)?.message);
+            console.warn(
+              "[photo] edit failed, falling back to analyze:",
+              (editErr as any)?.message,
+            );
           }
         }
 
         const prompt = text || "حلل هذي الصورة وقلي كل شي تشوفه بالتفصيل وبطريقة مسلية";
         const imageMessages = [
-          { role: "system", content: systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName, userUsername }) },
-          { role: "user", content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: dataUrl } },
-          ]},
+          {
+            role: "system",
+            content: systemPrompt({
+              userId,
+              isGroup,
+              isDev,
+              isAdmin: false,
+              chatTitle: msg.chat.title,
+              userName,
+              userUsername,
+            }),
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
         ];
         const { runOrchestrator } = await import("@/lib/alyssa/orchestrator.server");
-        const orch = await runOrchestrator({ ownerId: userId, chatId, messages: imageMessages, hasImage: true });
+        const orch = await runOrchestrator({
+          ownerId: userId,
+          chatId,
+          messages: imageMessages,
+          hasImage: true,
+        });
         const reply = orch.text;
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: reply || "ما كدرت أحلل 😅", reply_to_message_id: msg.message_id });
-        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[أرسل صورة] ${text || ""}`.trim() });
-        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حللت صورة المستخدم] ${reply ?? ""}`.slice(0, 8000) });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: reply || "ما كدرت أحلل 😅",
+          reply_to_message_id: msg.message_id,
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: userId || null,
+          userName,
+          role: "user",
+          content: `[أرسل صورة] ${text || ""}`.trim(),
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: null,
+          userName: BOT_NAME,
+          role: "assistant",
+          content: `[حللت صورة المستخدم] ${reply ?? ""}`.slice(0, 8000),
+        });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         const fallback = isAiUnavailableError(e)
           ? "صار ضغط مؤقت على معالجة الصور. جرّب بعد لحظات."
           : `خطأ بمعالجة الصورة:\n${e?.message ?? e}`;
-        await tg(token, "sendMessage", { chat_id: chatId, text: fallback, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: fallback,
+          reply_to_message_id: msg.message_id,
+        });
       }
       return;
     }
@@ -1051,15 +1569,56 @@ async function handleUpdate(update: any, token: string) {
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
         const instructions = text.replace(/^\/(تعديل|edit)\s*/i, "").trim();
-        if (!instructions) throw new Error("اكتب تفاصيل التعديل بعد الأمر. مثال:\n/تعديل غيّر اسم الدالة وأضف معالجة أخطاء");
+        if (!instructions)
+          throw new Error(
+            "اكتب تفاصيل التعديل بعد الأمر. مثال:\n/تعديل غيّر اسم الدالة وأضف معالجة أخطاء",
+          );
         const doc = msg.document;
         const name: string = doc.file_name ?? "file.txt";
         const lower = name.toLowerCase();
         const ext = lower.split(".").pop() ?? "";
-        const textExts = ["txt","md","markdown","json","csv","xml","yml","yaml","log","ini","env","py","js","ts","tsx","jsx","html","css","sh","sql","go","rs","cpp","c","h","hpp","java","kt","rb","php","swift","dart","lua","r","toml"];
+        const textExts = [
+          "txt",
+          "md",
+          "markdown",
+          "json",
+          "csv",
+          "xml",
+          "yml",
+          "yaml",
+          "log",
+          "ini",
+          "env",
+          "py",
+          "js",
+          "ts",
+          "tsx",
+          "jsx",
+          "html",
+          "css",
+          "sh",
+          "sql",
+          "go",
+          "rs",
+          "cpp",
+          "c",
+          "h",
+          "hpp",
+          "java",
+          "kt",
+          "rb",
+          "php",
+          "swift",
+          "dart",
+          "lua",
+          "r",
+          "toml",
+        ];
         const mimeIn: string = doc.mime_type ?? "";
-        const isTexty = textExts.includes(ext) || mimeIn.startsWith("text/") || lower.endsWith(".docx");
-        if (!isTexty) throw new Error(`صيغة "${ext || mimeIn}" غير مدعومة للتعديل. المدعوم: نصوص، كود، DOCX.`);
+        const isTexty =
+          textExts.includes(ext) || mimeIn.startsWith("text/") || lower.endsWith(".docx");
+        if (!isTexty)
+          throw new Error(`صيغة "${ext || mimeIn}" غير مدعومة للتعديل. المدعوم: نصوص، كود، DOCX.`);
 
         const url = await tgGetFileUrl(token, doc.file_id);
         const resp = await fetch(url);
@@ -1078,15 +1637,24 @@ async function handleUpdate(update: any, token: string) {
         const truncated = original.slice(0, 80000);
 
         const edited = await aiChat([
-          { role: "system", content: `أنت Senior Engineer. مهمتك تعديل ملف "${name}" حسب طلب المستخدم بدقة.
-أرجع المحتوى النهائي للملف كامل بعد التعديل فقط، بدون أي شرح، بدون أسوار ماركداون (\`\`\`)، بدون أي نص خارج المحتوى. حافظ على البنية والصياغة الأصلية واغيّر فقط ما طُلب.` },
-          { role: "user", content: `محتوى الملف الأصلي "${name}":\n\n${truncated}\n\nالتعديل المطلوب:\n${instructions}\n\nأرجع الملف الكامل بعد التعديل فقط.` },
+          {
+            role: "system",
+            content: `أنت Senior Engineer. مهمتك تعديل ملف "${name}" حسب طلب المستخدم بدقة.
+أرجع المحتوى النهائي للملف كامل بعد التعديل فقط، بدون أي شرح، بدون أسوار ماركداون (\`\`\`)، بدون أي نص خارج المحتوى. حافظ على البنية والصياغة الأصلية واغيّر فقط ما طُلب.`,
+          },
+          {
+            role: "user",
+            content: `محتوى الملف الأصلي "${name}":\n\n${truncated}\n\nالتعديل المطلوب:\n${instructions}\n\nأرجع الملف الكامل بعد التعديل فقط.`,
+          },
         ]).catch((e) => {
           if (!isAiUnavailableError(e)) throw e;
           return applyOfflineEdit(original, instructions, name);
         });
         let clean = (edited ?? "").trim();
-        clean = clean.replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+        clean = clean
+          .replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "")
+          .replace(/\n?```\s*$/, "")
+          .trim();
         if (!clean) throw new Error("ما كدرت أولد محتوى معدّل.");
 
         await stopTyping(token, chatId, typingId);
@@ -1096,11 +1664,29 @@ async function handleUpdate(update: any, token: string) {
         if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
         form.append("document", new Blob([clean], { type: mimeFor(outName) }), outName);
         await tgForm(token, "sendDocument", form);
-        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب تعديل ملف "${name}"] ${instructions}` });
-        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[عدّلت الملف وأرسلته باسم "${outName}"]. ملخص التعديل: ${instructions.slice(0,500)}` });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: userId || null,
+          userName,
+          role: "user",
+          content: `[طلب تعديل ملف "${name}"] ${instructions}`,
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: null,
+          userName: BOT_NAME,
+          role: "assistant",
+          content: `[عدّلت الملف وأرسلته باسم "${outName}"]. ملخص التعديل: ${instructions.slice(0, 500)}`,
+        });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بالتعديل:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: `خطأ بالتعديل:\n${e?.message ?? e}`,
+          reply_to_message_id: msg.message_id,
+        });
       }
       return;
     }
@@ -1109,25 +1695,58 @@ async function handleUpdate(update: any, token: string) {
     if (msg.document && !text.startsWith("/")) {
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
-        const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: false, chatTitle: msg.chat.title, userName, userUsername });
-        const reply = await analyzeDocument(token, msg.document, text, sys);
+        const sys = systemPrompt({
+          userId,
+          isGroup,
+          isDev,
+          isAdmin: false,
+          chatTitle: msg.chat.title,
+          userName,
+          userUsername,
+        });
+        const reply = await analyzeDocument(userId, chatId, token, msg.document, text, sys);
         await stopTyping(token, chatId, typingId);
         const final = (reply || "ما كدرت أحلل الملف 😅").slice(0, 4000);
-        await tg(token, "sendMessage", { chat_id: chatId, text: final, reply_to_message_id: msg.message_id });
-        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[أرسل ملف "${msg.document?.file_name ?? "file"}"] ${text || ""}`.trim() });
-        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حللت الملف "${msg.document?.file_name ?? "file"}"] ${final}`.slice(0, 8000) });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: final,
+          reply_to_message_id: msg.message_id,
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: userId || null,
+          userName,
+          role: "user",
+          content: `[أرسل ملف "${msg.document?.file_name ?? "file"}"] ${text || ""}`.trim(),
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: null,
+          userName: BOT_NAME,
+          role: "assistant",
+          content: `[حللت الملف "${msg.document?.file_name ?? "file"}"] ${final}`.slice(0, 8000),
+        });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ بتحليل الملف:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: `خطأ بتحليل الملف:\n${e?.message ?? e}`,
+          reply_to_message_id: msg.message_id,
+        });
       }
       return;
     }
 
-
     // ===== Commands =====
     if (text.startsWith("/ping") && !text.startsWith("/ping_url")) {
       console.log("[tg] /ping from", userId, "chat", chatId);
-      const r: any = await tg(token, "sendMessage", { chat_id: chatId, text: "Pong! ✅ System is online", reply_to_message_id: msg.message_id });
+      const r: any = await tg(token, "sendMessage", {
+        chat_id: chatId,
+        text: "Pong! ✅ System is online",
+        reply_to_message_id: msg.message_id,
+      });
       console.log("[tg] /ping sendMessage result:", JSON.stringify(r));
       return;
     }
@@ -1142,7 +1761,11 @@ async function handleUpdate(update: any, token: string) {
         form.append("document", new Blob([out], { type: "text/plain" }), "alisa-files.txt");
         await tgForm(token, "sendDocument", form);
       } else {
-        await tg(token, "sendMessage", { chat_id: chatId, text: out, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: out,
+          reply_to_message_id: msg.message_id,
+        });
       }
       return;
     }
@@ -1151,18 +1774,36 @@ async function handleUpdate(update: any, token: string) {
       const rf = text.match(/^\/(readfile|اقرأ|اقرا)(?:@\w+)?\s+([\s\S]+)$/i);
       if (rf) {
         const found = readSourceFile(rf[2]);
-        if (!found) { await tg(token, "sendMessage", { chat_id: chatId, text: `ما لكيت ملف بهذا الاسم 😅 جرّب /myfiles`, reply_to_message_id: msg.message_id }); return; }
+        if (!found) {
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: `ما لكيت ملف بهذا الاسم 😅 جرّب /myfiles`,
+            reply_to_message_id: msg.message_id,
+          });
+          return;
+        }
         const form = new FormData();
         form.append("chat_id", String(chatId));
-        form.append("caption", `📖 ${found.path} — ${found.content.split("\n").length} سطر / ${found.content.length} حرف`);
+        form.append(
+          "caption",
+          `📖 ${found.path} — ${found.content.split("\n").length} سطر / ${found.content.length} حرف`,
+        );
         form.append("reply_to_message_id", String(msg.message_id));
-        form.append("document", new Blob([found.content], { type: "text/plain" }), found.path.split("/").pop() ?? "file.txt");
+        form.append(
+          "document",
+          new Blob([found.content], { type: "text/plain" }),
+          found.path.split("/").pop() ?? "file.txt",
+        );
         await tgForm(token, "sendDocument", form);
         return;
       }
       const gc = text.match(/^\/(grepcode|بحث_كود)(?:@\w+)?\s+([\s\S]+)$/i);
       if (gc) {
-        await tg(token, "sendMessage", { chat_id: chatId, text: searchSource(gc[2]).slice(0, 4000), reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: searchSource(gc[2]).slice(0, 4000),
+          reply_to_message_id: msg.message_id,
+        });
         return;
       }
     }
@@ -1170,9 +1811,11 @@ async function handleUpdate(update: any, token: string) {
     if (/^\/(stats|احصائيات|إحصائيات|سطور)(@\w+)?$/i.test(text)) {
       const s = sourceStats();
       const top = sourcePaths()
-        .map((p) => ({ p, n: (readSourceFile(p)?.content.split("\n").length ?? 0) }))
-        .sort((a, b) => b.n - a.n).slice(0, 10)
-        .map((x, i) => `${i + 1}. ${x.p} — ${x.n} سطر`).join("\n");
+        .map((p) => ({ p, n: readSourceFile(p)?.content.split("\n").length ?? 0 }))
+        .sort((a, b) => b.n - a.n)
+        .slice(0, 10)
+        .map((x, i) => `${i + 1}. ${x.p} — ${x.n} سطر`)
+        .join("\n");
       await tg(token, "sendMessage", {
         chat_id: chatId,
         text: `📊 إحصائيات كودي:\n\n• الملفات: ${s.files}\n• أسطر البرمجة: ${s.lines}\n• الأحرف: ${s.chars}\n• أدوات الذكاء: ${AI_TOOL_KEYS.length}\n\n🔝 أكبر ملفاتي:\n${top}`,
@@ -1187,17 +1830,31 @@ async function handleUpdate(update: any, token: string) {
       checks.push(`✅ الاتصال بتلكرام: شغال`);
       checks.push(`✅ الوعي الذاتي: ${s.files} ملف • ${s.lines} سطر • ${s.chars} حرف`);
       checks.push(`✅ الأدوات المسجّلة: ${AI_TOOL_KEYS.length} أداة ذكاء + 9 أدوات شبكة`);
-      try { await db(); checks.push("✅ الذاكرة الدائمة: متصلة"); } catch { checks.push("⚠️ الذاكرة الدائمة: غير متاحة الآن"); }
-      try { const t = await aiChat([{ role: "user", content: "قل: تمام" }]); checks.push(t ? "✅ نموذج الذكاء: يرد" : "⚠️ نموذج الذكاء: رد فارغ"); }
-      catch { checks.push("⚠️ نموذج الذكاء: وضع استمرار الخدمة"); }
+      try {
+        await db();
+        checks.push("✅ الذاكرة الدائمة: متصلة");
+      } catch {
+        checks.push("⚠️ الذاكرة الدائمة: غير متاحة الآن");
+      }
+      try {
+        const t = await aiChat([{ role: "user", content: "قل: تمام" }]);
+        checks.push(t ? "✅ نموذج الذكاء: يرد" : "⚠️ نموذج الذكاء: رد فارغ");
+      } catch {
+        checks.push("⚠️ نموذج الذكاء: وضع استمرار الخدمة");
+      }
       checks.push(`✅ الحاسبة: 2+2 = ${toolCalc("2+2").replace(/[^\d]/g, "")}`);
-      await tg(token, "sendMessage", { chat_id: chatId, text: `🩺 الفحص الذاتي:\n\n${checks.join("\n")}`, reply_to_message_id: msg.message_id });
+      await tg(token, "sendMessage", {
+        chat_id: chatId,
+        text: `🩺 الفحص الذاتي:\n\n${checks.join("\n")}`,
+        reply_to_message_id: msg.message_id,
+      });
       return;
     }
 
-
     // ===== Network / API tool commands (real APIs, no AI) =====
-    const netCmd = text.match(/^\/(ip|dns|whois|ping_url|meta|short|weather|currency|calc)(?:@\w+)?\s*(.*)$/is);
+    const netCmd = text.match(
+      /^\/(ip|dns|whois|ping_url|meta|short|weather|currency|calc)(?:@\w+)?\s*(.*)$/is,
+    );
     if (netCmd) {
       const cmd = netCmd[1].toLowerCase();
       const arg = (netCmd[2] || "").trim();
@@ -1208,8 +1865,7 @@ async function handleUpdate(update: any, token: string) {
         else if (cmd === "dns") {
           const [d, t] = arg.split(/\s+/);
           out = await toolDns(d ?? "", t ?? "A");
-        }
-        else if (cmd === "whois") out = await toolWhois(arg);
+        } else if (cmd === "whois") out = await toolWhois(arg);
         else if (cmd === "ping_url") out = await toolPingUrl(arg);
         else if (cmd === "meta") out = await toolMeta(arg);
         else if (cmd === "short") out = await toolShort(arg);
@@ -1217,10 +1873,19 @@ async function handleUpdate(update: any, token: string) {
         else if (cmd === "currency") out = await toolCurrency(arg);
         else if (cmd === "calc") out = toolCalc(arg);
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: (out || "لا نتائج").slice(0, 4000), reply_to_message_id: msg.message_id, disable_web_page_preview: true } as any);
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: (out || "لا نتائج").slice(0, 4000),
+          reply_to_message_id: msg.message_id,
+          disable_web_page_preview: true,
+        } as any);
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل الأمر /${cmd}:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: `فشل الأمر /${cmd}:\n${e?.message ?? e}`,
+          reply_to_message_id: msg.message_id,
+        });
       }
       return;
     }
@@ -1235,7 +1900,11 @@ async function handleUpdate(update: any, token: string) {
         arg = (msg.reply_to_message.text ?? msg.reply_to_message.caption ?? "").trim();
       }
       if (!arg && !["quote", "joke"].includes(key)) {
-        await tg(token, "sendMessage", { chat_id: chatId, text: `اكتب المحتوى بعد الأمر /${key} — أو رد بالأمر على رسالة تحتوي على المحتوى.`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: `اكتب المحتوى بعد الأمر /${key} — أو رد بالأمر على رسالة تحتوي على المحتوى.`,
+          reply_to_message_id: msg.message_id,
+        });
         return;
       }
       const typingId = await startTyping(token, chatId, msg.message_id);
@@ -1246,9 +1915,15 @@ async function handleUpdate(update: any, token: string) {
         const fileBlock = /```FILE:(\S+?)\s*\n([\s\S]*?)```/g;
         const files: Array<{ name: string; code: string }> = [];
         let m: RegExpExecArray | null;
-        while ((m = fileBlock.exec(reply)) !== null) files.push({ name: m[1].trim(), code: m[2].trim() });
+        while ((m = fileBlock.exec(reply)) !== null)
+          files.push({ name: m[1].trim(), code: m[2].trim() });
         const intro = reply.replace(fileBlock, "").trim();
-        if (intro) await tg(token, "sendMessage", { chat_id: chatId, text: intro.slice(0, 4000), reply_to_message_id: msg.message_id });
+        if (intro)
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: intro.slice(0, 4000),
+            reply_to_message_id: msg.message_id,
+          });
         for (const f of files) {
           const form = new FormData();
           form.append("chat_id", String(chatId));
@@ -1257,41 +1932,96 @@ async function handleUpdate(update: any, token: string) {
           form.append("document", new Blob([f.code], { type: mimeFor(f.name) }), f.name);
           await tgForm(token, "sendDocument", form);
         }
-        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[/${key}] ${arg.slice(0, 500)}` });
-        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: reply.slice(0, 8000) });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: userId || null,
+          userName,
+          role: "user",
+          content: `[/${key}] ${arg.slice(0, 500)}`,
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: null,
+          userName: BOT_NAME,
+          role: "assistant",
+          content: reply.slice(0, 8000),
+        });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل /${key}: ${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: `فشل /${key}: ${friendlyAiError(e)}`,
+          reply_to_message_id: msg.message_id,
+        });
       }
       return;
     }
 
-
     // /بحث <query> — بحث حي في الإنترنت (Grounding)
     if (text.startsWith("/بحث") || text.startsWith("/search")) {
       const q = text.replace(/^\/\S+\s*/, "").trim();
-      if (!q) { await tg(token, "sendMessage", { chat_id: chatId, text: "اكتب موضوع البحث بعد الأمر 🌐\nمثال: /بحث احدث اصدار Node" }); return; }
+      if (!q) {
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: "اكتب موضوع البحث بعد الأمر 🌐\nمثال: /بحث احدث اصدار Node",
+        });
+        return;
+      }
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
         const results = await webSearch(q);
         if (!results.length) {
           await stopTyping(token, chatId, typingId);
-          await tg(token, "sendMessage", { chat_id: chatId, text: "ما لكيت نتائج مفيدة 😅", reply_to_message_id: msg.message_id });
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: "ما لكيت نتائج مفيدة 😅",
+            reply_to_message_id: msg.message_id,
+          });
           return;
         }
         const grounded = `أنت مساعد يستخدم فقط النتائج التالية للإجابة بدقة. اذكر الأرقام بين قوسين كمصادر [1] [2].`;
-        const src = results.map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}\n${r.url}`).join("\n\n");
+        const src = results
+          .map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}\n${r.url}`)
+          .join("\n\n");
         const answer = await aiChat([
           { role: "system", content: grounded },
-          { role: "user", content: `السؤال: ${q}\n\nالنتائج:\n${src}\n\nأجب بالعربي بشكل منظم واذكر المصادر.` },
+          {
+            role: "user",
+            content: `السؤال: ${q}\n\nالنتائج:\n${src}\n\nأجب بالعربي بشكل منظم واذكر المصادر.`,
+          },
         ]).catch(() => `نتائج البحث:\n\n${src}`);
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: (answer || "").slice(0, 4000), reply_to_message_id: msg.message_id, disable_web_page_preview: true } as any);
-        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[بحث] ${q}` });
-        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[نتائج بحث] ${(answer || "").slice(0, 4000)}` });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: (answer || "").slice(0, 4000),
+          reply_to_message_id: msg.message_id,
+          disable_web_page_preview: true,
+        } as any);
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: userId || null,
+          userName,
+          role: "user",
+          content: `[بحث] ${q}`,
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: null,
+          userName: BOT_NAME,
+          role: "assistant",
+          content: `[نتائج بحث] ${(answer || "").slice(0, 4000)}`,
+        });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل البحث: ${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: `فشل البحث: ${friendlyAiError(e)}`,
+          reply_to_message_id: msg.message_id,
+        });
       }
       return;
     }
@@ -1300,7 +2030,14 @@ async function handleUpdate(update: any, token: string) {
     if (text.startsWith("/كود") || text.startsWith("/code")) {
       const target = msg.reply_to_message;
       const photo = target?.photo?.[target.photo.length - 1] ?? msg.photo?.[msg.photo?.length - 1];
-      if (!photo) { await tg(token, "sendMessage", { chat_id: chatId, text: "دز الأمر رداً على صورة واجهة (Screenshot) 🖼️\nأو أرفق صورة مع الكابشن /كود html", reply_to_message_id: msg.message_id }); return; }
+      if (!photo) {
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: "دز الأمر رداً على صورة واجهة (Screenshot) 🖼️\nأو أرفق صورة مع الكابشن /كود html",
+          reply_to_message_id: msg.message_id,
+        });
+        return;
+      }
       const hint = text.replace(/^\/\S+\s*/, "").trim() || "html";
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
@@ -1310,13 +2047,23 @@ async function handleUpdate(update: any, token: string) {
         const dataUrl = `data:image/jpeg;base64,${buf.toString("base64")}`;
         const { name, mime } = detectFile(hint);
         const code = await aiChat([
-          { role: "system", content: `أنت مصمم/مبرمج Senior. ستحوّل صورة واجهة (Screenshot) إلى كود ${detectLang(name)} كامل، responsive، نظيف، وقابل للتشغيل مباشرة. أرجع المحتوى الخام فقط بدون أي شرح ولا أسوار ماركداون.` },
-          { role: "user", content: [
-            { type: "text", text: `حوّل هذي الواجهة إلى ملف "${name}". ${hint}` },
-            { type: "image_url", image_url: { url: dataUrl } },
-          ]},
+          {
+            role: "system",
+            content: `أنت مصمم/مبرمج Senior. ستحوّل صورة واجهة (Screenshot) إلى كود ${detectLang(name)} كامل، responsive، نظيف، وقابل للتشغيل مباشرة. أرجع المحتوى الخام فقط بدون أي شرح ولا أسوار ماركداون.`,
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: `حوّل هذي الواجهة إلى ملف "${name}". ${hint}` },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
         ]);
-        let clean = (code || "").trim().replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+        let clean = (code || "")
+          .trim()
+          .replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "")
+          .replace(/\n?```\s*$/, "")
+          .trim();
         if (!clean) throw new Error("رجع رد فارغ");
         await stopTyping(token, chatId, typingId);
         const form = new FormData();
@@ -1325,22 +2072,44 @@ async function handleUpdate(update: any, token: string) {
         if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
         form.append("document", new Blob([clean], { type: mime }), name);
         await tgForm(token, "sendDocument", form);
-        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[Screenshot → كود] ${hint}` });
-        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[حوّلت واجهة الصورة إلى ملف "${name}"]` });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: userId || null,
+          userName,
+          role: "user",
+          content: `[Screenshot → كود] ${hint}`,
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: null,
+          userName: BOT_NAME,
+          role: "assistant",
+          content: `[حوّلت واجهة الصورة إلى ملف "${name}"]`,
+        });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `فشل التحويل: ${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: `فشل التحويل: ${friendlyAiError(e)}`,
+          reply_to_message_id: msg.message_id,
+        });
       }
       return;
     }
 
-    if (text.startsWith("/start") || text.startsWith("/help") || text === "/ميزات" || text === "/features") {
+    if (
+      text.startsWith("/start") ||
+      text.startsWith("/help") ||
+      text === "/ميزات" ||
+      text === "/features"
+    ) {
       const now = baghdadNow();
       const s = sourceStats();
       await tg(token, "sendMessage", {
         chat_id: chatId,
-        text:
-`هلا والله 👋 آني ${BOT_NAME} 🔥
+        text: `هلا والله 👋 آني ${BOT_NAME} 🔥
 🕐 ${now.human}
 🧠 أعرف نفسي حرف بحرف: ${s.files} ملف • ${s.lines} سطر من كودي.
 
@@ -1349,10 +2118,12 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
-
     if (text.startsWith("/img") || text.startsWith("/image") || text.startsWith("/صورة")) {
       const prompt = text.replace(/^\/\S+\s*/, "").trim();
-      if (!prompt) { await tg(token, "sendMessage", { chat_id: chatId, text: "اكتب وصف الصورة بعد الأمر 🎨" }); return; }
+      if (!prompt) {
+        await tg(token, "sendMessage", { chat_id: chatId, text: "اكتب وصف الصورة بعد الأمر 🎨" });
+        return;
+      }
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
         const png = await aiImage(prompt);
@@ -1364,8 +2135,22 @@ async function handleUpdate(update: any, token: string) {
         form.append("photo", new Blob([new Uint8Array(png)], { type: "image/png" }), "image.png");
         const res = await tgForm(token, "sendPhoto", form);
         if (!res.ok) throw new Error(JSON.stringify(res));
-        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب إنشاء صورة] ${prompt}` });
-        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[أنشأت صورة وأرسلتها] الوصف: ${prompt}` });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: userId || null,
+          userName,
+          role: "user",
+          content: `[طلب إنشاء صورة] ${prompt}`,
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: null,
+          userName: BOT_NAME,
+          role: "assistant",
+          content: `[أنشأت صورة وأرسلتها] الوصف: ${prompt}`,
+        });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
         if (isAiUnavailableError(e)) {
@@ -1377,10 +2162,28 @@ async function handleUpdate(update: any, token: string) {
           if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
           form.append("document", new Blob([svg], { type: "image/svg+xml" }), svgName);
           await tgForm(token, "sendDocument", form);
-          await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب إنشاء صورة] ${prompt}` });
-          await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[أرسلت SVG مؤقت بدل الصورة التوليدية] ${prompt}` });
+          await saveMsg({
+            chatId,
+            chatType,
+            userId: userId || null,
+            userName,
+            role: "user",
+            content: `[طلب إنشاء صورة] ${prompt}`,
+          });
+          await saveMsg({
+            chatId,
+            chatType,
+            userId: null,
+            userName: BOT_NAME,
+            role: "assistant",
+            content: `[أرسلت SVG مؤقت بدل الصورة التوليدية] ${prompt}`,
+          });
         } else {
-          await tg(token, "sendMessage", { chat_id: chatId, text: `ما كدرت أنشئ الصورة 😅\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: `ما كدرت أنشئ الصورة 😅\n${e?.message ?? e}`,
+            reply_to_message_id: msg.message_id,
+          });
         }
       }
       return;
@@ -1388,13 +2191,22 @@ async function handleUpdate(update: any, token: string) {
 
     if (text.startsWith("/file") || text.startsWith("/ملف")) {
       const prompt = text.replace(/^\/\S+\s*/, "").trim();
-      if (!prompt) { await tg(token, "sendMessage", { chat_id: chatId, text: "مثال:\n/file script.py كود بايثون للفيبوناتشي" }); return; }
+      if (!prompt) {
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: "مثال:\n/file script.py كود بايثون للفيبوناتشي",
+        });
+        return;
+      }
       const typingId = await startTyping(token, chatId, msg.message_id);
       try {
         const { name, mime } = detectFile(prompt);
         const desc = prompt.replace(/^\S+\.[a-zA-Z0-9]{1,6}\s*/, "") || prompt;
         const content = await aiChat([
-          { role: "system", content: `أنت Senior Engineer. ولّد محتوى ملف "${name}" كامل وقابل للتشغيل مباشرة، نظيف وآمن وفعّال، مع تعليقات قصيرة عند الحاجة. أرجع المحتوى الخام فقط بدون أي شرح ولا أسوار ماركداون (لا \`\`\`) ولا أي نص خارجي.` },
+          {
+            role: "system",
+            content: `أنت Senior Engineer. ولّد محتوى ملف "${name}" كامل وقابل للتشغيل مباشرة، نظيف وآمن وفعّال، مع تعليقات قصيرة عند الحاجة. أرجع المحتوى الخام فقط بدون أي شرح ولا أسوار ماركداون (لا \`\`\`) ولا أي نص خارجي.`,
+          },
           { role: "user", content: desc },
         ]).catch((e) => {
           if (!isAiUnavailableError(e)) throw e;
@@ -1402,7 +2214,10 @@ async function handleUpdate(update: any, token: string) {
         });
         // Strip any code fences (start/end, even repeated)
         let clean = content.trim();
-        clean = clean.replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+        clean = clean
+          .replace(/^```[a-zA-Z0-9_+-]*\s*\n?/, "")
+          .replace(/\n?```\s*$/, "")
+          .trim();
         await stopTyping(token, chatId, typingId);
         const form = new FormData();
         form.append("chat_id", String(chatId));
@@ -1410,11 +2225,29 @@ async function handleUpdate(update: any, token: string) {
         if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
         form.append("document", new Blob([clean], { type: mime }), name);
         await tgForm(token, "sendDocument", form);
-        await saveMsg({ chatId, chatType, userId: userId || null, userName, role: "user", content: `[طلب إنشاء ملف "${name}"] ${desc}` });
-        await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[أنشأت ملف "${name}" وأرسلته]. وصف المحتوى: ${desc.slice(0,500)}` });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: userId || null,
+          userName,
+          role: "user",
+          content: `[طلب إنشاء ملف "${name}"] ${desc}`,
+        });
+        await saveMsg({
+          chatId,
+          chatType,
+          userId: null,
+          userName: BOT_NAME,
+          role: "assistant",
+          content: `[أنشأت ملف "${name}" وأرسلته]. وصف المحتوى: ${desc.slice(0, 500)}`,
+        });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
-        await tg(token, "sendMessage", { chat_id: chatId, text: `خطأ:\n${e?.message ?? e}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: `خطأ:\n${e?.message ?? e}`,
+          reply_to_message_id: msg.message_id,
+        });
       }
       return;
     }
@@ -1427,21 +2260,31 @@ async function handleUpdate(update: any, token: string) {
       if (modCmd && isGroup) {
         const raw = modCmd[1].toLowerCase();
         const arg = (modCmd[2] || "").trim();
-        const kind: "ban" | "kick" | "mute" | "unban" | "unmute" =
-          /^(ban|حظر)$/.test(raw) ? "ban"
-          : /^(kick|طرد|اطرد)$/.test(raw) ? "kick"
-          : /^(mute|كتم|اكتم)$/.test(raw) ? "mute"
-          : /^(unban|رفع_الحظر)$/.test(raw) ? "unban"
-          : "unmute";
+        const kind: "ban" | "kick" | "mute" | "unban" | "unmute" = /^(ban|حظر)$/.test(raw)
+          ? "ban"
+          : /^(kick|طرد|اطرد)$/.test(raw)
+            ? "kick"
+            : /^(mute|كتم|اكتم)$/.test(raw)
+              ? "mute"
+              : /^(unban|رفع_الحظر)$/.test(raw)
+                ? "unban"
+                : "unmute";
 
         // صلاحية المستخدم
         if (!(await isAdmin(token, chatId, userId))) {
-          await tg(token, "sendMessage", { chat_id: chatId, text: "هذا الأمر للمشرفين فقط 🛡️", reply_to_message_id: msg.message_id });
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: "هذا الأمر للمشرفين فقط 🛡️",
+            reply_to_message_id: msg.message_id,
+          });
           return;
         }
         // صلاحية البوت نفسه
-        const me: any = bot?.id ? await tg(token, "getChatMember", { chat_id: chatId, user_id: bot.id }) : { ok: false };
-        const meOk = me?.ok && me.result?.status === "administrator" && me.result?.can_restrict_members;
+        const me: any = bot?.id
+          ? await tg(token, "getChatMember", { chat_id: chatId, user_id: bot.id })
+          : { ok: false };
+        const meOk =
+          me?.ok && me.result?.status === "administrator" && me.result?.can_restrict_members;
         if (!meOk) {
           await tg(token, "sendMessage", {
             chat_id: chatId,
@@ -1456,22 +2299,43 @@ async function handleUpdate(update: any, token: string) {
         let targetName: string = msg.reply_to_message?.from?.first_name ?? "العضو";
         if (!target && arg) {
           const idm = arg.match(/(\d{5,})/);
-          if (idm) { target = Number(idm[1]); targetName = idm[1]; }
+          if (idm) {
+            target = Number(idm[1]);
+            targetName = idm[1];
+          }
         }
         if (!target) {
-          await tg(token, "sendMessage", { chat_id: chatId, text: "رد بالأمر على رسالة العضو، أو اكتب الآيدي: `/طرد 123456789`", parse_mode: "Markdown", reply_to_message_id: msg.message_id } as any);
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: "رد بالأمر على رسالة العضو، أو اكتب الآيدي: `/طرد 123456789`",
+            parse_mode: "Markdown",
+            reply_to_message_id: msg.message_id,
+          } as any);
           return;
         }
-        if (target === bot?.id) { await tg(token, "sendMessage", { chat_id: chatId, text: "ما راح أطرد نفسي 😂" }); return; }
+        if (target === bot?.id) {
+          await tg(token, "sendMessage", { chat_id: chatId, text: "ما راح أطرد نفسي 😂" });
+          return;
+        }
         if (await isAdmin(token, chatId, target)) {
-          await tg(token, "sendMessage", { chat_id: chatId, text: "ما أكدر أطرد مشرف مثلي 🤝", reply_to_message_id: msg.message_id });
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: "ما أكدر أطرد مشرف مثلي 🤝",
+            reply_to_message_id: msg.message_id,
+          });
           return;
         }
 
-        let r: any, okText = "";
+        let r: any,
+          okText = "";
         if (kind === "kick") {
           r = await tg(token, "banChatMember", { chat_id: chatId, user_id: target });
-          if (r?.ok) await tg(token, "unbanChatMember", { chat_id: chatId, user_id: target, only_if_banned: true }).catch(() => {});
+          if (r?.ok)
+            await tg(token, "unbanChatMember", {
+              chat_id: chatId,
+              user_id: target,
+              only_if_banned: true,
+            }).catch(() => {});
           okText = `👢 تم طرد ${targetName} (يقدر يرجع بدعوة)`;
         } else if (kind === "ban") {
           r = await tg(token, "banChatMember", { chat_id: chatId, user_id: target });
@@ -1479,21 +2343,54 @@ async function handleUpdate(update: any, token: string) {
         } else if (kind === "mute") {
           const mins = parseInt(arg.match(/\d{1,4}/)?.[0] ?? "10", 10) || 10;
           r = await tg(token, "restrictChatMember", {
-            chat_id: chatId, user_id: target, until_date: Math.floor(Date.now() / 1000) + mins * 60,
-            permissions: { can_send_messages: false, can_send_audios: false, can_send_documents: false, can_send_photos: false, can_send_videos: false, can_send_video_notes: false, can_send_voice_notes: false, can_send_polls: false, can_send_other_messages: false, can_add_web_page_previews: false },
+            chat_id: chatId,
+            user_id: target,
+            until_date: Math.floor(Date.now() / 1000) + mins * 60,
+            permissions: {
+              can_send_messages: false,
+              can_send_audios: false,
+              can_send_documents: false,
+              can_send_photos: false,
+              can_send_videos: false,
+              can_send_video_notes: false,
+              can_send_voice_notes: false,
+              can_send_polls: false,
+              can_send_other_messages: false,
+              can_add_web_page_previews: false,
+            },
           });
           okText = `🔇 تم كتم ${targetName} لمدة ${mins} دقيقة`;
         } else if (kind === "unban") {
-          r = await tg(token, "unbanChatMember", { chat_id: chatId, user_id: target, only_if_banned: true });
+          r = await tg(token, "unbanChatMember", {
+            chat_id: chatId,
+            user_id: target,
+            only_if_banned: true,
+          });
           okText = `♻️ تم رفع الحظر عن ${targetName}`;
         } else {
           r = await tg(token, "restrictChatMember", {
-            chat_id: chatId, user_id: target,
-            permissions: { can_send_messages: true, can_send_audios: true, can_send_documents: true, can_send_photos: true, can_send_videos: true, can_send_video_notes: true, can_send_voice_notes: true, can_send_polls: true, can_send_other_messages: true, can_add_web_page_previews: true },
+            chat_id: chatId,
+            user_id: target,
+            permissions: {
+              can_send_messages: true,
+              can_send_audios: true,
+              can_send_documents: true,
+              can_send_photos: true,
+              can_send_videos: true,
+              can_send_video_notes: true,
+              can_send_voice_notes: true,
+              can_send_polls: true,
+              can_send_other_messages: true,
+              can_add_web_page_previews: true,
+            },
           });
           okText = `🔊 تم فك الكتم عن ${targetName}`;
         }
-        await tg(token, "sendMessage", { chat_id: chatId, text: r?.ok ? okText : `ما زبطت 😕 السبب: ${r?.description ?? "غير معروف"}`, reply_to_message_id: msg.message_id });
+        await tg(token, "sendMessage", {
+          chat_id: chatId,
+          text: r?.ok ? okText : `ما زبطت 😕 السبب: ${r?.description ?? "غير معروف"}`,
+          reply_to_message_id: msg.message_id,
+        });
         return;
       }
     }
@@ -1512,7 +2409,9 @@ async function handleUpdate(update: any, token: string) {
         const emojis = ["👍", "❤️", "🔥", "😁", "🤔", "👀", "💯"];
         const pick = emojis[Math.floor(Math.random() * emojis.length)];
         await tg(token, "setMessageReaction", {
-          chat_id: chatId, message_id: msg.message_id, reaction: [{ type: "emoji", emoji: pick }],
+          chat_id: chatId,
+          message_id: msg.message_id,
+          reaction: [{ type: "emoji", emoji: pick }],
         }).catch(() => {});
       }
       return;
@@ -1527,7 +2426,10 @@ async function handleUpdate(update: any, token: string) {
       const memoryRows = await loadHistory(chatId, MEMORY_SCAN_LIMIT);
       const baseHist = memoryRows.slice(-HISTORY_LIMIT);
       for (const m of baseHist) {
-        history.push({ role: m.role, content: m.role === "user" ? `${m.name ?? ""}: ${m.content}` : m.content });
+        history.push({
+          role: m.role,
+          content: m.role === "user" ? `${m.name ?? ""}: ${m.content}` : m.content,
+        });
       }
 
       // ذاكرة طويلة المدى: إذا وصلنا للحد نلخّص كل ما هو أقدم من أقدم رسالة محمّلة
@@ -1539,12 +2441,19 @@ async function handleUpdate(update: any, token: string) {
 
       // بحث حي (Grounding): إذا المستخدم طلب صراحة أو استفسر عن معلومة متجددة
       let webContext = "";
-      const asksLive = /(ابحث|بحث|جيب من الانترنت|اخر|أحدث|اليوم|السنة|2026|price|سعر|أسعار|حالياً|latest|news|أخبار)/i.test(text);
+      const asksLive =
+        /(ابحث|بحث|جيب من الانترنت|اخر|أحدث|اليوم|السنة|2026|price|سعر|أسعار|حالياً|latest|news|أخبار)/i.test(
+          text,
+        );
       if (asksLive && text.length > 5) {
-        const q = text.replace(/^اليسا[،:]?\s*/i, "").replace(/^@\S+\s*/i, "").slice(0, 200);
+        const q = text
+          .replace(/^اليسا[،:]?\s*/i, "")
+          .replace(/^@\S+\s*/i, "")
+          .slice(0, 200);
         const results = await webSearch(q);
         if (results.length) {
-          webContext = `\n\n🌐 نتائج بحث حي من الويب لسؤال المستخدم (استخدمها كمصدر حديث ولا تخترع، اذكر المصدر بين قوسين):\n` +
+          webContext =
+            `\n\n🌐 نتائج بحث حي من الويب لسؤال المستخدم (استخدمها كمصدر حديث ولا تخترع، اذكر المصدر بين قوسين):\n` +
             results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   ${r.url}`).join("\n");
         }
       }
@@ -1552,17 +2461,27 @@ async function handleUpdate(update: any, token: string) {
       let extraContext = "";
       if (!isGroup && userId) {
         const cross = await loadUserRecentAcrossGroups(userId, 12);
-        const snippets = cross.map(c => {
-          const block = c.msgs.map(m => `- ${m.name ?? ""}: ${m.content}`).join("\n");
+        const snippets = cross.map((c) => {
+          const block = c.msgs.map((m) => `- ${m.name ?? ""}: ${m.content}`).join("\n");
           return `من مجموعة ${c.chatId}:\n${block}`;
         });
-        if (snippets.length) extraContext = `\n\nسياق من مجموعاتك الأخيرة:\n${snippets.join("\n\n")}`;
+        if (snippets.length)
+          extraContext = `\n\nسياق من مجموعاتك الأخيرة:\n${snippets.join("\n\n")}`;
       }
 
-      const sys = systemPrompt({ userId, isGroup, isDev, isAdmin: userIsAdmin, chatTitle: msg.chat.title, userName, userUsername })
-        + (longTerm ? `\n\n🧠 ذاكرة طويلة المدى (تلخيص جلسات سابقة):\n${longTerm}` : "")
-        + webContext
-        + extraContext;
+      const sys =
+        systemPrompt({
+          userId,
+          isGroup,
+          isDev,
+          isAdmin: userIsAdmin,
+          chatTitle: msg.chat.title,
+          userName,
+          userUsername,
+        }) +
+        (longTerm ? `\n\n🧠 ذاكرة طويلة المدى (تلخيص جلسات سابقة):\n${longTerm}` : "") +
+        webContext +
+        extraContext;
       const messages = [{ role: "system", content: sys }, ...history];
       // Ensure current msg is last user turn
       if (!history.length || history[history.length - 1].content?.indexOf(text) === -1) {
@@ -1603,7 +2522,9 @@ async function handleUpdate(update: any, token: string) {
       if (files.length || orchDeliveries.length) {
         if (intro) {
           sent = await tg(token, "sendMessage", {
-            chat_id: chatId, text: intro, reply_to_message_id: isGroup ? msg.message_id : undefined,
+            chat_id: chatId,
+            text: intro,
+            reply_to_message_id: isGroup ? msg.message_id : undefined,
           });
         }
         for (const f of files) {
@@ -1619,23 +2540,38 @@ async function handleUpdate(update: any, token: string) {
           form.append("chat_id", String(chatId));
           form.append("caption", `📦 ${d.name}`);
           if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
-          form.append("document", new Blob([new Uint8Array(d.buffer)], { type: mimeFor(d.name) }), d.name);
+          form.append(
+            "document",
+            new Blob([new Uint8Array(d.buffer)], { type: mimeFor(d.name) }),
+            d.name,
+          );
           await tgForm(token, "sendDocument", form);
         }
       } else {
         sent = await tg(token, "sendMessage", {
-          chat_id: chatId, text: final, reply_to_message_id: isGroup ? msg.message_id : undefined,
+          chat_id: chatId,
+          text: final,
+          reply_to_message_id: isGroup ? msg.message_id : undefined,
         });
       }
       // Save assistant turn to persistent memory
-      await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: final });
+      await saveMsg({
+        chatId,
+        chatType,
+        userId: null,
+        userName: BOT_NAME,
+        role: "assistant",
+        content: final,
+      });
       // Track our message id so we can react to user replies to it
       if (sent.ok) lastBotMsgIds.add(`${chatId}:${sent.result.message_id}`);
-
-
     } catch (e: any) {
       await stopTyping(token, chatId, typingId);
-      await tg(token, "sendMessage", { chat_id: chatId, text: `صار خطأ 😅\n${friendlyAiError(e)}`, reply_to_message_id: msg.message_id });
+      await tg(token, "sendMessage", {
+        chat_id: chatId,
+        text: `صار خطأ 😅\n${friendlyAiError(e)}`,
+        reply_to_message_id: msg.message_id,
+      });
     }
   } catch (e: any) {
     console.error("update error", e);
@@ -1646,7 +2582,9 @@ const lastBotMsgIds = new Set<string>();
 
 async function handleReaction(r: any, token: string) {
   // If a user reacted on bot's message, sometimes react back to *their* recent message
-  const chatId = r.chat?.id; const userId = r.user?.id; const mid = r.message_id;
+  const chatId = r.chat?.id;
+  const userId = r.user?.id;
+  const mid = r.message_id;
   if (!chatId || !userId) return;
   const key = `${chatId}:${mid}`;
   if (!lastBotMsgIds.has(key)) return;
@@ -1655,7 +2593,10 @@ async function handleReaction(r: any, token: string) {
   const pick = newReactions[0]?.emoji ?? "❤️";
   // React back on the bot's own message (mirror) — can't easily target user's last msg without tracking
   await tg(token, "setMessageReaction", {
-    chat_id: chatId, message_id: mid, reaction: [{ type: "emoji", emoji: pick }], is_big: false,
+    chat_id: chatId,
+    message_id: mid,
+    reaction: [{ type: "emoji", emoji: pick }],
+    is_big: false,
   }).catch(() => {});
 }
 
@@ -1671,11 +2612,18 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         const expected = deriveSecret(token);
         const got = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
         if (!safeEqual(got, expected)) {
-          console.warn("[tg] 401: bad secret token. got_len=", got.length, "expected_len=", expected.length);
+          console.warn(
+            "[tg] 401: bad secret token. got_len=",
+            got.length,
+            "expected_len=",
+            expected.length,
+          );
           return new Response("Unauthorized", { status: 401 });
         }
         let update: any;
-        try { update = await request.json(); } catch (e) {
+        try {
+          update = await request.json();
+        } catch (e) {
           console.error("[tg] invalid JSON body", e);
           return Response.json({ ok: true });
         }

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 // ALYSSA CYBER — Tool Engine.
 // Every tool has a JSON schema, validates its input, logs its execution to the
 // database and returns a structured result. No tool fakes a result: when a
@@ -5,7 +7,7 @@
 
 import { zipSync, strToU8 } from "fflate";
 import * as store from "./store.server";
-import { checkScope, scopeConfigSummary } from "./scope-guard.server";
+import { checkScope, isPublicHttpTarget, scopeConfigSummary } from "./scope-guard.server";
 
 export type ToolContext = {
   ownerId: number;
@@ -94,6 +96,7 @@ export async function webSearch(
 
 async function openUrl(url: string, maxChars = 6000) {
   if (!/^https?:\/\//i.test(url)) throw new Error("رابط غير صالح");
+  if (!isPublicHttpTarget(url)) throw new Error("تم رفض الرابط لحماية SSRF");
   const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 AlyssaCyber" } });
   const raw = await r.text();
   const text = raw
@@ -285,6 +288,76 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "dns_analysis",
+    description: "تحليل سجلات DNS لهدف مصرح به عبر DNS-over-HTTPS.",
+    parameters: obj(
+      { target: str("النطاق أو الرابط داخل النطاق المصرح"), record_type: str("نوع السجل مثل A أو MX"), category: str("فئة الفحص") },
+      ["target", "record_type", "category"],
+    ),
+    run: async (a) => {
+      const decision = checkScope(String(a.target), String(a.category));
+      if (!decision.allowed) return { ok: false, blocked: true, decision };
+      const url = new URL(decision.target);
+      const recordType = String(a.record_type || "A").toUpperCase();
+      const response = await fetch(
+        `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(url.hostname)}&type=${encodeURIComponent(recordType)}`,
+        { headers: { accept: "application/dns-json" } },
+      );
+      if (!response.ok) return { ok: false, error: `DNS service returned ${response.status}` };
+      const data = (await response.json()) as { Answer?: Array<Record<string, unknown>> };
+      return { ok: true, target: url.hostname, recordType, answers: data.Answer ?? [] };
+    },
+  },
+  {
+    name: "security_headers_check",
+    description: "فحص رؤوس HTTP الأمنية لهدف مصرح به مع حفظ الدليل الفعلي.",
+    parameters: obj(
+      { target: str("الرابط داخل النطاق المصرح"), category: str("فئة الفحص") },
+      ["target", "category"],
+    ),
+    run: async (a) => {
+      const decision = checkScope(String(a.target), String(a.category));
+      if (!decision.allowed) return { ok: false, blocked: true, decision };
+      const response = await fetch(decision.target, { method: "HEAD", redirect: "manual" });
+      const names = [
+        "strict-transport-security",
+        "content-security-policy",
+        "x-content-type-options",
+        "x-frame-options",
+        "referrer-policy",
+        "permissions-policy",
+      ];
+      const headers = Object.fromEntries(names.map((name) => [name, response.headers.get(name)]));
+      return { ok: true, target: decision.target, status: response.status, headers };
+    },
+  },
+  {
+    name: "technology_detection",
+    description: "استنتاج تقنيات ظاهرة من رؤوس واستجابة HTTP فعلية لهدف مصرح به.",
+    parameters: obj(
+      { target: str("الرابط داخل النطاق المصرح"), category: str("فئة الفحص") },
+      ["target", "category"],
+    ),
+    run: async (a) => {
+      const decision = checkScope(String(a.target), String(a.category));
+      if (!decision.allowed) return { ok: false, blocked: true, decision };
+      const response = await fetch(decision.target, { redirect: "manual" });
+      const body = (await response.text()).slice(0, 200_000);
+      const server = response.headers.get("server");
+      const poweredBy = response.headers.get("x-powered-by");
+      const technologyMarkers: Array<[string, RegExp]> = [
+        ["WordPress", /wp-content|wp-includes/i],
+        ["Next.js", /__next_f|next-static/i],
+        ["React", /data-reactroot|react-dom/i],
+        ["Vue", /data-v-[a-f0-9]+|vue/i],
+      ];
+      const markers = technologyMarkers
+        .filter(([, pattern]) => pattern.test(body))
+        .map(([name]) => name);
+      return { ok: true, target: decision.target, status: response.status, server, poweredBy, markers };
+    },
+  },
+  {
     name: "job_status",
     description: "قراءة حالة آخر مهمة للمستخدم قبل متابعة أو تشخيص طلب طويل.",
     parameters: obj({}, []),
@@ -390,6 +463,29 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "update_project",
+    description: "تحديث metadata مشروع المستخدم الحالي دون إنشاء مشروع بديل.",
+    parameters: obj(
+      {
+        project_id: str("معرف المشروع"),
+        name: str("اسم المشروع"),
+        description: str("وصف المشروع"),
+        technology: str("التقنيات"),
+        status: str("حالة المشروع"),
+      },
+      ["project_id"],
+    ),
+    run: async (a, ctx) => {
+      const project = await store.updateProject(ctx.ownerId, String(a.project_id), {
+        ...(a.name !== undefined ? { name: String(a.name) } : {}),
+        ...(a.description !== undefined ? { description: String(a.description) } : {}),
+        ...(a.technology !== undefined ? { technology: String(a.technology) } : {}),
+        ...(a.status !== undefined ? { status: String(a.status) } : {}),
+      });
+      return project ? { ok: true, project_id: project.id, updated_at: project.updated_at } : { ok: false, error: "المشروع غير موجود أو لا يخص المستخدم" };
+    },
+  },
+  {
     name: "list_files",
     description: "عرض ملفات المشروع الحالي مع الأحجام والإصدارات.",
     parameters: obj({}, []),
@@ -424,12 +520,11 @@ export const TOOLS: ToolDef[] = [
     run: async (a, ctx) => {
       const pid = await needProject(ctx);
       const r = await store.writeFile({
-        pid: undefined,
         projectId: pid,
         path: String(a.path),
         content: String(a.content),
         note: String(a.note ?? ""),
-      } as any);
+      });
       return {
         ok: true,
         path: r.file.path,

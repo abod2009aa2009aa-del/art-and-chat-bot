@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, no-useless-escape */
+
+import { isPublicHttpTarget } from "./alyssa/scope-guard.server";
+
 // Tool registry for أليسا — Telegram bot
 // Each tool is small, isolated, and wrapped in try/catch by the dispatcher.
 // AI-backed tools take an `aiChat` callable from the webhook (dependency-inject to avoid circular imports).
@@ -180,6 +184,7 @@ export async function toolPingUrl(target: string): Promise<string> {
   let url = target.trim();
   if (!url) return "اكتب رابط. مثال: /ping_url https://google.com";
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+  if (!isPublicHttpTarget(url)) return "تم رفض الرابط لحماية SSRF.";
   const attempts = 3;
   const results: number[] = [];
   let status = 0;
@@ -205,6 +210,7 @@ export async function toolMeta(url: string): Promise<string> {
   let u = url.trim();
   if (!u) return "اكتب رابط. مثال: /meta https://example.com";
   if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  if (!isPublicHttpTarget(u)) return "تم رفض الرابط لحماية SSRF.";
   const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 Alisa/2026" } });
   if (!r.ok) return `فشل الجلب (${r.status})`;
   const html = (await r.text()).slice(0, 500000);
@@ -233,6 +239,7 @@ export async function toolMeta(url: string): Promise<string> {
 export async function toolShort(url: string): Promise<string> {
   const u = url.trim();
   if (!/^https?:\/\//i.test(u)) return "اكتب رابط كامل يبدأ بـ http/https";
+  if (!isPublicHttpTarget(u)) return "تم رفض الرابط لحماية SSRF.";
   const r = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(u)}`);
   const txt = (await r.text()).trim();
   if (!r.ok || !/^https?:\/\//.test(txt)) return `فشل الاختصار: ${txt.slice(0, 200)}`;
@@ -298,7 +305,6 @@ export function toolCalc(expr: string): string {
       if (name in consts) return String(consts[name]);
       throw new SyntaxError(`اسم غير مسموح: ${name}`);
     });
-    // eslint-disable-next-line no-new-func
     const val = Function(`"use strict"; return (${js});`)();
     if (typeof val !== "number" || !isFinite(val)) return "النتيجة غير صالحة.";
     return `🧮 ${src} = ${val}`;

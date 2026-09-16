@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 // ALYSSA CYBER — Persistence layer (projects, files, versions, jobs, logs).
 // Server-only. All access goes through the service-role client; the tables are
 // locked (RLS on, no policies) so nothing can reach them from a browser.
@@ -208,6 +210,29 @@ export async function touchProject(projectId: string, patch: Partial<Project> = 
     .eq("id", projectId);
 }
 
+export async function updateProject(
+  ownerId: number,
+  projectId: string,
+  patch: { name?: string; description?: string; technology?: string; status?: string; state?: Record<string, unknown> },
+) {
+  const project = await getProject(ownerId, projectId);
+  if (!project) return null;
+  const c = await sb();
+  const { data, error } = await c
+    .from("alyssa_projects")
+    .update({
+      ...patch,
+      ...(patch.name ? { name: patch.name.slice(0, 120) } : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", projectId)
+    .eq("owner_id", ownerId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateProject: ${error.message}`);
+  return data as Project;
+}
+
 // ---------- Files + versions ----------
 
 function langOf(path: string): string {
@@ -232,6 +257,16 @@ function langOf(path: string): string {
   return map[ext] ?? ext ?? "text";
 }
 
+export function validateProjectFilePath(input: string): string {
+  const path = input.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!path || path.includes("\0") || path.split("/").some((part) => part === "..")) {
+    throw new Error("مسار ملف غير صالح");
+  }
+  return path;
+}
+
+const MAX_PROJECT_FILE_BYTES = 2_000_000;
+
 export async function writeFile(opts: {
   projectId: string;
   path: string;
@@ -239,8 +274,7 @@ export async function writeFile(opts: {
   note?: string;
 }): Promise<{ file: ProjectFile; version: number; created: boolean }> {
   const c = await sb();
-  const path = opts.path.replace(/^\/+/, "").replace(/\.\.+/g, ".");
-  if (!path || path.includes("..")) throw new Error("مسار ملف غير صالح");
+  const path = validateProjectFilePath(opts.path);
   const { data: existing } = await c
     .from("alyssa_files")
     .select("*")
@@ -249,6 +283,9 @@ export async function writeFile(opts: {
     .maybeSingle();
 
   const bytes = Buffer.byteLength(opts.content, "utf8");
+  if (bytes > MAX_PROJECT_FILE_BYTES) {
+    throw new Error(`حجم الملف يتجاوز الحد المسموح (${MAX_PROJECT_FILE_BYTES} bytes)`);
+  }
   if (existing) {
     const nextVersion = (existing.version ?? 1) + 1;
     // keep the previous content as an immutable version before overwriting
@@ -376,7 +413,7 @@ export async function createJob(j: {
       title: j.title.slice(0, 200),
       plan: j.plan ?? [],
       total_steps: j.totalSteps ?? 0,
-      status: "planning",
+      status: "queued",
       progress_message_id: j.progressMessageId ?? null,
     })
     .select()
@@ -433,7 +470,14 @@ export async function controlJob(
     cancel: "cancelled",
     retry: "resuming",
   };
-  await checkpointJob(jobId, { status: next[action], error: null });
+  if (action === "retry") {
+    await updateJob(jobId, { retry_count: (job.retry_count ?? 0) + 1 });
+  }
+  await checkpointJob(jobId, {
+    status: next[action],
+    error: null,
+    currentStep: action === "cancel" ? "cancelled_by_user" : action,
+  });
   return getJob(jobId);
 }
 
@@ -482,10 +526,17 @@ export async function runningJob(ownerId: number): Promise<Job | null> {
       "repairing",
       "packaging",
       "resuming",
+      "paused",
     ])
     .order("created_at", { ascending: false })
     .limit(1);
   return ((data ?? [])[0] as Job) ?? null;
+}
+
+export async function jobControlState(ownerId: number, jobId: string): Promise<JobStatus | null> {
+  const job = await getJob(jobId);
+  if (!job || job.owner_id !== ownerId) return null;
+  return JOB_STATUSES.includes(job.status as JobStatus) ? (job.status as JobStatus) : null;
 }
 
 export async function saveResearch(ownerId: number | null, query: string, results: unknown) {
@@ -497,4 +548,34 @@ export async function saveResearch(ownerId: number | null, query: string, result
   } catch (e) {
     console.error("[research] save failed", e);
   }
+}
+
+export async function loadMemorySummary(chatId: number): Promise<{
+  summary: string;
+  sourceThrough: string;
+} | null> {
+  const c = await sb();
+  const { data, error } = await c
+    .from("alyssa_memory_summaries")
+    .select("summary,source_through")
+    .eq("chat_id", chatId)
+    .maybeSingle();
+  if (error) throw new Error(`loadMemorySummary: ${error.message}`);
+  return data
+    ? { summary: String(data.summary), sourceThrough: String(data.source_through) }
+    : null;
+}
+
+export async function saveMemorySummary(chatId: number, summary: string, sourceThrough: string) {
+  const c = await sb();
+  const { error } = await c.from("alyssa_memory_summaries").upsert(
+    {
+      chat_id: chatId,
+      summary: summary.slice(0, 20000),
+      source_through: sourceThrough,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "chat_id" },
+  );
+  if (error) throw new Error(`saveMemorySummary: ${error.message}`);
 }

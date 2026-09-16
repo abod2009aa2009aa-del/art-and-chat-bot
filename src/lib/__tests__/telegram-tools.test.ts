@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   BOT_COMMANDS,

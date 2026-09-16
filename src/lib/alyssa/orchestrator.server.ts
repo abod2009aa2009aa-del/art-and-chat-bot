@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 // ALYSSA CYBER — AI Orchestrator.
 // Single entry point that runs a chat turn through openai/gpt-6-astra with
 // function tools from tools.server.ts. The model chooses which tools to call
@@ -68,31 +70,36 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     examMode: input.examMode,
   });
   const previousJob = await store.runningJob(input.ownerId).catch(() => null);
+  const activeProject = await store.activeProject(input.ownerId).catch(() => null);
   const ctx: ToolContext = {
     ownerId: input.ownerId,
     chatId: input.chatId,
-    projectId: null,
+    projectId: previousJob?.project_id ?? activeProject?.id ?? null,
     jobId: null,
     deliveries: [],
   };
   const toolCalls: Array<{ name: string; ok: boolean }> = [];
-  let jobId: string | null = null;
+  let jobId: string | null = previousJob?.status === "resuming" ? previousJob.id : null;
   try {
-    const job = await store.createJob({
-      ownerId: input.ownerId,
-      chatId: input.chatId,
-      title: String(
-        input.messages.find((message) => message.role === "user")?.content ?? "ALYSSA task",
-      ).slice(0, 200),
-      plan: capabilityPlan,
-      totalSteps: MAX_STEPS,
-    });
-    jobId = job.id;
-    ctx.jobId = job.id;
-    await store.checkpointJob(job.id, {
-      status: "planning",
-      currentStep: "capability_routing",
+    if (!jobId) {
+      const job = await store.createJob({
+        ownerId: input.ownerId,
+        chatId: input.chatId,
+        projectId: ctx.projectId,
+        title: String(
+          input.messages.find((message) => message.role === "user")?.content ?? "ALYSSA task",
+        ).slice(0, 200),
+        plan: capabilityPlan,
+        totalSteps: MAX_STEPS,
+      });
+      jobId = job.id;
+    }
+    ctx.jobId = jobId;
+    await store.checkpointJob(jobId, {
+      status: previousJob?.status === "resuming" ? "resuming" : "planning",
+      currentStep: previousJob?.status === "resuming" ? "resume_from_checkpoint" : "capability_routing",
       progress: 5,
+      error: null,
     });
   } catch (error) {
     console.error("[orchestrator] job persistence unavailable", error);
@@ -105,6 +112,9 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       previousJob
         ? `Existing resumable job: ${JSON.stringify({ id: previousJob.id, status: previousJob.status, projectId: previousJob.project_id, progress: previousJob.progress, currentStep: previousJob.current_step })}`
         : "Existing resumable job: none found.",
+      activeProject
+        ? `Active project context: ${JSON.stringify({ id: activeProject.id, name: activeProject.name, technology: activeProject.technology, status: activeProject.status })}`
+        : "Active project context: none found.",
       "Choose the smallest real tool sequence that achieves the requested outcome. Do not claim validation, testing, research, or file delivery unless a corresponding tool result confirms it.",
     ].join("\n"),
   };
@@ -112,6 +122,18 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
 
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
+      if (jobId) {
+        const control = await store.jobControlState(input.ownerId, jobId);
+        if (control === "paused" || control === "cancelled") {
+          return {
+            text: control === "paused" ? "تم إيقاف المهمة مؤقتًا ويمكن استئنافها." : "تم إلغاء المهمة.",
+            deliveries: ctx.deliveries,
+            toolCalls,
+            usedFallback: false,
+            capabilityPlan,
+          };
+        }
+      }
       if (jobId)
         await store.checkpointJob(jobId, {
           status: step === 0 ? "planning" : "generating",
@@ -140,6 +162,14 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
             : { ok: false, error: `أداة غير معروفة: ${name}` };
           toolCalls.push({ name: String(name), ok: result.ok !== false });
           if (jobId) {
+            const phase =
+              ["lint_python", "inspect_dependencies", "web_search", "open_url"].includes(String(name))
+                ? "analyzing"
+                : ["generate_zip", "send_file"].includes(String(name))
+                  ? "packaging"
+                  : result.ok === false
+                    ? "repairing"
+                    : "generating";
             await store.addJobStep(
               jobId,
               toolCalls.length - 1,
@@ -148,8 +178,9 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
               JSON.stringify(result),
             );
             await store.checkpointJob(jobId, {
-              status: result.ok === false ? "repairing" : "generating",
-              lastSuccessfulChunk: result.ok === false ? null : String(name),
+              status: phase,
+              currentStep: String(name),
+              lastSuccessfulChunk: result.ok === false ? undefined : String(name),
             });
           }
           convo.push({

@@ -20,6 +20,9 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // Formatting is enforced separately by Prettier; keeping it out of ESLint
+      // avoids turning generated Supabase types into a repository-wide diff.
+      "prettier/prettier": "off",
       "no-restricted-imports": [
         "error",
         {
@@ -37,4 +40,5 @@ export default tseslint.config(
     },
   },
   eslintPluginPrettier,
+  { rules: { "prettier/prettier": "off" } },
 );

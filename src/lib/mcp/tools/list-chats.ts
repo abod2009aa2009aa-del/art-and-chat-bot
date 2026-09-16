@@ -4,11 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 
 function db() {
-  return createClient<Database>(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false } },
-  );
+  return createClient<Database>(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }
 
 export default defineTool({
@@ -17,7 +15,13 @@ export default defineTool({
   description:
     "List distinct Telegram chats that have stored messages, with message counts and latest activity timestamp.",
   inputSchema: {
-    limit: z.number().int().min(1).max(500).optional().describe("Max recent messages to scan (default 500)."),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe("Max recent messages to scan (default 500)."),
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async ({ limit }) => {
@@ -28,7 +32,16 @@ export default defineTool({
       .order("created_at", { ascending: false })
       .limit(limit ?? 500);
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };
-    const map = new Map<number, { chat_id: number; chat_type: string; count: number; last_activity: string; sample_user: string | null }>();
+    const map = new Map<
+      number,
+      {
+        chat_id: number;
+        chat_type: string;
+        count: number;
+        last_activity: string;
+        sample_user: string | null;
+      }
+    >();
     for (const row of data ?? []) {
       const cur = map.get(row.chat_id);
       if (cur) {
