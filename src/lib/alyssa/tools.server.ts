@@ -642,6 +642,49 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "validate_project",
+    description:
+      "تحقق فعلي من مشروع المستخدم قبل الإنهاء: يفحص المسارات والأحجام ويطبق lintPython على ملفات Python. لا يشغل test suite أو كود غير موثوق.",
+    parameters: obj({}, []),
+    run: async (_a, ctx) => {
+      const pid = await needProject(ctx);
+      const files = await store.listFiles(pid);
+      const issues: Array<{ path: string; level: string; message: string }> = [];
+      let pythonFiles = 0;
+      for (const file of files) {
+        try {
+          store.validateProjectFilePath(file.path);
+        } catch (error) {
+          issues.push({ path: file.path, level: "error", message: String(error) });
+          continue;
+        }
+        if (file.bytes > 2_000_000) {
+          issues.push({ path: file.path, level: "error", message: "حجم الملف يتجاوز 2MB" });
+        }
+        if (file.path.toLowerCase().endsWith(".py")) {
+          pythonFiles += 1;
+          const result = lintPython(file.content);
+          for (const issue of result.issues.slice(0, 20)) {
+            issues.push({
+              path: file.path,
+              level: issue.level,
+              message: `السطر ${issue.line}: ${issue.msg}`,
+            });
+          }
+        }
+      }
+      return {
+        ok: issues.every((issue) => issue.level !== "error"),
+        project_id: pid,
+        files: files.length,
+        python_files: pythonFiles,
+        checked: ["path_traversal", "file_size", "python_static_analysis"],
+        issues: issues.slice(0, 100),
+        execution: "static_validation_only",
+      };
+    },
+  },
+  {
     name: "run_python",
     description:
       "تنفيذ كود بايثون فعلياً. غير متاح في هذه البيئة (لا يوجد sandbox معزول)، ويرجع رفضاً صريحاً — لا تدّعِ أبداً أنك نفذت الكود.",

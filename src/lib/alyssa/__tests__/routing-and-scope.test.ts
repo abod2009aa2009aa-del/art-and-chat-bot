@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { routeCapabilities } from "../capability-router";
 import { checkScope, isPublicHttpTarget } from "../scope-guard.server";
 import { validateProjectFilePath } from "../store.server";
+import { TOOLS } from "../tools.server";
 
 const savedEnv = { ...process.env };
 
@@ -72,5 +73,14 @@ describe("ScopeGuard", () => {
     expect(validateProjectFilePath("src/main.py")).toBe("src/main.py");
     expect(() => validateProjectFilePath("../../secrets.txt")).toThrow();
     expect(() => validateProjectFilePath("C:\\temp\\file.txt")).not.toThrow();
+  });
+});
+
+describe("ALYSSA validation capability", () => {
+  it("registers real static project validation without claiming execution", () => {
+    const tool = TOOLS.find((entry) => entry.name === "validate_project");
+    expect(tool).toBeDefined();
+    expect(tool?.description).toMatch(/lintPython|static|ساكن|ثابت/i);
+    expect(TOOLS.some((entry) => entry.name === "run_python")).toBe(true);
   });
 });

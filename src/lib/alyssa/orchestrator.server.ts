@@ -116,6 +116,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
         ? `Active project context: ${JSON.stringify({ id: activeProject.id, name: activeProject.name, technology: activeProject.technology, status: activeProject.status })}`
         : "Active project context: none found.",
       "Choose the smallest real tool sequence that achieves the requested outcome. Do not claim validation, testing, research, or file delivery unless a corresponding tool result confirms it.",
+      "After creating or modifying project files, call validate_project before declaring the task complete. It is static validation only; never claim that a test suite or Python execution ran unless a real tool result says so.",
     ].join("\n"),
   };
   const convo: any[] = [capabilityMessage, ...input.messages];
@@ -165,6 +166,8 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
             const phase =
               ["lint_python", "inspect_dependencies", "web_search", "open_url"].includes(String(name))
                 ? "analyzing"
+                : String(name) === "validate_project"
+                  ? "testing"
                 : ["generate_zip", "send_file"].includes(String(name))
                   ? "packaging"
                   : result.ok === false
