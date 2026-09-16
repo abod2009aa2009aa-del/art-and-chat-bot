@@ -1567,12 +1567,25 @@ ${MAIN_MENU_TEXT}`,
         messages.push({ role: "user", content: `${userName}: ${text}` });
       }
 
-      const reply = await aiChat(messages).catch((e) => {
-        if (!isAiUnavailableError(e)) throw e;
-        return offlineChatReply(text, isGroup, userName);
-      });
+      // ===== Orchestrator: astra + tools (projects/files/lint/search/zip) =====
+      // Falls back to gemini chat if astra is unavailable so the bot never goes silent.
+      let final = "";
+      const orchDeliveries: Array<{ name: string; buffer: Buffer }> = [];
+      try {
+        const { runOrchestrator } = await import("@/lib/alyssa/orchestrator.server");
+        const orch = await runOrchestrator({ ownerId: userId, chatId, messages });
+        final = orch.text;
+        orchDeliveries.push(...orch.deliveries);
+      } catch (orchErr: any) {
+        console.error("[orchestrator] fallback →", orchErr?.message ?? orchErr);
+        const reply = await aiChat(messages).catch((e) => {
+          if (!isAiUnavailableError(e)) throw e;
+          return offlineChatReply(text, isGroup, userName);
+        });
+        final = (reply ?? "").trim() || "…";
+      }
       await stopTyping(token, chatId, typingId);
-      const final = reply?.trim() || "…";
+      if (!final) final = orchDeliveries.length ? "تم." : "…";
 
       // ===== Auto-extract FILE:<name> blocks → send as document(s) =====
       const fileBlock = /```FILE:(\S+?)\s*\n([\s\S]*?)```/g;
@@ -1585,7 +1598,7 @@ ${MAIN_MENU_TEXT}`,
       intro = final.replace(fileBlock, "").trim();
 
       let sent: any = { ok: false };
-      if (files.length) {
+      if (files.length || orchDeliveries.length) {
         if (intro) {
           sent = await tg(token, "sendMessage", {
             chat_id: chatId, text: intro, reply_to_message_id: isGroup ? msg.message_id : undefined,
@@ -1597,6 +1610,14 @@ ${MAIN_MENU_TEXT}`,
           form.append("caption", `📄 ${f.name}`);
           if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
           form.append("document", new Blob([f.code], { type: mimeFor(f.name) }), f.name);
+          await tgForm(token, "sendDocument", form);
+        }
+        for (const d of orchDeliveries) {
+          const form = new FormData();
+          form.append("chat_id", String(chatId));
+          form.append("caption", `📦 ${d.name}`);
+          if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+          form.append("document", new Blob([new Uint8Array(d.buffer)], { type: mimeFor(d.name) }), d.name);
           await tgForm(token, "sendDocument", form);
         }
       } else {
