@@ -16,6 +16,8 @@ import {
   toolCurrency,
   detectPhotoIntent,
 } from "../telegram-tools";
+import { routeTelegramIntent } from "../telegram-intent-router";
+import { isModerationOwner } from "../telegram-moderation-auth";
 
 // ============ 1) قائمة الأوامر ============
 describe("BOT_COMMANDS registry", () => {
@@ -32,6 +34,63 @@ describe("BOT_COMMANDS registry", () => {
   it("has no duplicate commands", () => {
     const names = BOT_COMMANDS.map((c) => c.command);
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe("Telegram intelligent intent routing", () => {
+  const direct = { isGroup: false, hasReplyTarget: false, hasPhoto: false, hasDocument: false };
+
+  it.each([
+    ["اعرض لي إحصائيات الكود", "/stats"],
+    ["اشرح لي هذا الكود", "/explain"],
+    ["اكتشف سبب الخطأ في البرنامج", "/debug"],
+    ["حسّن أداء هذا الكود", "/optimize"],
+    ["ولّد توثيق للمشروع", "/doc"],
+    ["ابحث عن أحدث إصدار Node", "/search"],
+    ["أنشئ لي ملف Python", "/file"],
+    ["ارسم لي صورة لمدينة مستقبلية", "/img"],
+  ])("routes natural request %j to %j", (text, command) => {
+    expect(routeTelegramIntent(text, direct).command).toMatch(new RegExp(`^${command}\\b`));
+  });
+
+  it("keeps sensitive moderation routing restricted to groups", () => {
+    expect(routeTelegramIntent("احظر هذا العضو", direct).command).toBeNull();
+    const decision = routeTelegramIntent("احظر هذا العضو", {
+      ...direct,
+      isGroup: true,
+      isAddressed: true,
+      hasReplyTarget: true,
+    });
+    expect(decision.intent).toBe("moderation");
+    expect(String(decision.command)).toMatch(/^\/ban\b/);
+  });
+
+  it("does not interrupt unrelated group conversation", () => {
+    expect(
+      routeTelegramIntent("ابحث عن أحدث إصدار Node", { ...direct, isGroup: true }),
+    ).toMatchObject({ intent: "none", command: null });
+    expect(
+      routeTelegramIntent("أليسا ابحث عن أحدث إصدار Node", { ...direct, isGroup: true, isAddressed: true }),
+    ).toMatchObject({ intent: "search", command: expect.stringMatching(/^\/search\b/) });
+  });
+
+  it("leaves explicit commands untouched for compatibility", () => {
+    expect(routeTelegramIntent("/debug هذا الكود", direct).command).toBeNull();
+  });
+
+  it("allows moderation only for OWNER_TELEGRAM_ID", () => {
+    const previous = process.env.OWNER_TELEGRAM_ID;
+    process.env.OWNER_TELEGRAM_ID = "6475190017";
+    expect(isModerationOwner(6475190017)).toBe(true);
+    expect(isModerationOwner(123456789)).toBe(false);
+    expect(isModerationOwner(0)).toBe(false);
+    if (previous === undefined) delete process.env.OWNER_TELEGRAM_ID;
+    else process.env.OWNER_TELEGRAM_ID = previous;
+  });
+
+  it("does not expose moderation commands in visible registries", () => {
+    const hidden = new Set(["kick", "ban", "mute", "unmute", "unban"]);
+    expect(BOT_COMMANDS.some(({ command }) => hidden.has(command))).toBe(false);
   });
 });
 

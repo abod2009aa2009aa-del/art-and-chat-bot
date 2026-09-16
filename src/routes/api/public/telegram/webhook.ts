@@ -18,6 +18,8 @@ import {
   toolCalc,
   detectPhotoIntent,
 } from "@/lib/telegram-tools";
+import { routeTelegramIntent } from "@/lib/telegram-intent-router";
+import { isModerationOwner } from "@/lib/telegram-moderation-auth";
 import {
   listSourceText,
   readSourceFile,
@@ -58,7 +60,6 @@ const FEATURES: Array<{ cmd: string; desc: string }> = [
   { cmd: "/file <اسم.امتداد> <وصف>", desc: "توليد أي ملف كود/نص وإرساله جاهز." },
   { cmd: "/تعديل <تفاصيل>", desc: "دز ملف (TXT/كود/DOCX) مع الأمر بالكابشن ليعدّله ويرجعه." },
   { cmd: "تحليل ملفات", desc: "PDF / DOCX / TXT / كل ملفات الكود — تلخيص وفهم." },
-  { cmd: "/ban و /mute", desc: "أدوات إشراف رداً على رسالة (للمشرفين)." },
   { cmd: "/ping", desc: "اختبار اتصال." },
   {
     cmd: "وضع استمرار الخدمة",
@@ -1320,7 +1321,7 @@ async function handleUpdate(update: any, token: string) {
   const userId: number = msg.from?.id ?? 0;
   const userName: string = msg.from?.first_name ?? msg.from?.username ?? "صديقي";
   const userUsername: string | undefined = msg.from?.username;
-  const text: string = (msg.text ?? msg.caption ?? "").trim();
+  let text: string = (msg.text ?? msg.caption ?? "").trim();
   const isDev =
     userId === DEVELOPER_ID || userUsername?.toLowerCase() === DEVELOPER_USERNAME.toLowerCase();
   const bot = await getBotInfo(token);
@@ -1739,6 +1740,25 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
+    // Natural language is routed into the existing compatibility handlers.
+    // Explicit slash commands remain unchanged and skip this layer.
+    const intent = routeTelegramIntent(text, {
+      isGroup,
+      isAddressed:
+        !isGroup ||
+        isDev ||
+        Boolean(msg.reply_to_message) ||
+        Boolean(bot?.username && new RegExp(`@${bot.username}\\b`, "i").test(text)) ||
+        /^\s*(?:يا\s+)?(?:أليسا|اليسا|اليسه|أليسه|Alisa|alisa)\b/i.test(text),
+      hasReplyTarget: Boolean(msg.reply_to_message),
+      hasPhoto: Boolean(msg.photo?.length),
+      hasDocument: Boolean(msg.document),
+    });
+    if (intent.command) {
+      console.log("[tg] intent route:", intent.intent, intent.confidence, intent.reason);
+      text = intent.command;
+    }
+
     // ===== Commands =====
     if (text.startsWith("/ping") && !text.startsWith("/ping_url")) {
       console.log("[tg] /ping from", userId, "chat", chatId);
@@ -2113,7 +2133,7 @@ async function handleUpdate(update: any, token: string) {
 🕐 ${now.human}
 🧠 أعرف نفسي حرف بحرف: ${s.files} ملف • ${s.lines} سطر من كودي.
 
-احچيلي بالهدف مباشرة: أصلّح، أبني، أراجع، أختبر، أبحث، أو أحلل. أختار الأدوات المناسبة وحدي.`,
+      احچيلي بالهدف مباشرة بدون أوامر: قول لي وش تبي أسوي وأنا أفهمها وأنفذها. أقدر أصلّح، أبني، أراجع، أختبر، أبحث، أو أحلل وأختار الأدوات المناسبة وحدي.`,
       } as any);
       return;
     }
@@ -2270,11 +2290,19 @@ async function handleUpdate(update: any, token: string) {
                 ? "unban"
                 : "unmute";
 
-        // صلاحية المستخدم
+        // Moderation is owner-only; Telegram permission checks remain defense in depth.
+        if (!isModerationOwner(userId)) {
+          await tg(token, "sendMessage", {
+            chat_id: chatId,
+            text: "هذا الأمر متاح فقط لمالك البوت.",
+            reply_to_message_id: msg.message_id,
+          });
+          return;
+        }
         if (!(await isAdmin(token, chatId, userId))) {
           await tg(token, "sendMessage", {
             chat_id: chatId,
-            text: "هذا الأمر للمشرفين فقط 🛡️",
+            text: "هذا الأمر متاح فقط لمالك البوت.",
             reply_to_message_id: msg.message_id,
           });
           return;

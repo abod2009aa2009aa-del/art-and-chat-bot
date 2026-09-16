@@ -34,6 +34,7 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 ```sh
 TELEGRAM_BOT_TOKEN=
+OWNER_TELEGRAM_ID=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 LOVABLE_API_KEY=

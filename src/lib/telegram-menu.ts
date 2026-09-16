@@ -11,7 +11,7 @@ export type MenuSection = {
 export const MENU_SECTIONS: MenuSection[] = [
   {
     key: "core", color: "🔴", title: "الأساسيات",
-    commands: ["start", "help", "ping", "menu", "search", "selftest", "stats", "kick", "ban", "mute", "unmute", "unban"],
+    commands: ["start", "help", "ping", "menu", "search", "selftest", "stats"],
   },
   {
     key: "media", color: "🟢", title: "الصور والوسائط",

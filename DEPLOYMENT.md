@@ -14,6 +14,7 @@ This project is ready for repository-based deployment to a hosting platform that
 Set these variables in the platform environment before publishing or running the app:
 
 - `TELEGRAM_BOT_TOKEN`
+- `OWNER_TELEGRAM_ID` (the only Telegram user ID allowed to run moderation commands)
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `LOVABLE_API_KEY`
