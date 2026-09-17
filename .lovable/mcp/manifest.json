@@ -99,6 +99,69 @@
           }
         },
         "outputSchema": null
+      },
+      {
+        "name": "alyssa_projects",
+        "title": "List ALYSSA projects",
+        "description": "Read-only project and file summary for one Telegram owner.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "owner_id": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "description": "Telegram owner id"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "owner_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "alyssa_job_status",
+        "title": "Read ALYSSA job status",
+        "description": "Read-only status and recent steps for an owner-owned ALYSSA job.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "owner_id": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "description": "Telegram owner id"
+            },
+            "job_id": {
+              "description": "Optional job id",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "owner_id"
+          ]
+        },
+        "outputSchema": null
       }
     ]
   }
