@@ -3,27 +3,22 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Your App" },
-      { name: "description", content: "Replace this with a one-sentence description of your app." },
-      { property: "og:title", content: "Your App" },
-      { property: "og:description", content: "Replace this with a one-sentence description of your app." },
+      { title: "ALYSSA CYBER — أليسا" },
+      { name: "description", content: "أليسا، مساعد عبدالله على تيليجرام." },
+      { property: "og:title", content: "ALYSSA CYBER — أليسا" },
+      { property: "og:description", content: "أليسا، مساعد عبدالله على تيليجرام." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background text-foreground">
+      <h1 className="text-4xl font-bold">ALYSSA CYBER</h1>
+      <a className="text-primary underline underline-offset-4" href="https://t.me/hsjxnnsxbot">أليسا على تيليجرام ↗</a>
+    </main>
   );
 }
