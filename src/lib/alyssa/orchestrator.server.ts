@@ -10,6 +10,8 @@
 import { TOOLS, TOOL_SCHEMAS, executeTool, type ToolContext } from "./tools.server";
 import { formatCapabilityPlan, routeCapabilities, type CapabilityPlan } from "./capability-router";
 import * as store from "./store.server";
+import { contentText } from "./conversation";
+import { callAstraResponses, createAstraConversation } from "./responses.server";
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
 const MODEL = "openai/gpt-6-astra";
@@ -39,30 +41,11 @@ export type OrchestratorResult = {
   capabilityPlan?: CapabilityPlan;
 };
 
-async function callAstra(messages: any[], tools: any[]) {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("LOVABLE_API_KEY missing");
-  const r = await fetch(`${GATEWAY}/chat/completions`, {
-    method: "POST",
-    headers: { "Lovable-API-Key": key, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      tools,
-      tool_choice: "auto",
-      reasoning_effort: "low",
-    }),
-  });
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`astra ${r.status}: ${txt.slice(0, 400)}`);
-  return JSON.parse(txt);
-}
-
 export async function runOrchestrator(input: OrchestratorInput): Promise<OrchestratorResult> {
   const capabilityPlan = routeCapabilities({
     text: input.messages
       .filter((message) => message.role === "user")
-      .map((message) => String(message.content ?? ""))
+      .map((message) => contentText(message.content))
       .join("\n"),
     hasImage: input.hasImage,
     fileNames: input.fileNames,
@@ -86,9 +69,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
         ownerId: input.ownerId,
         chatId: input.chatId,
         projectId: ctx.projectId,
-        title: String(
-          input.messages.find((message) => message.role === "user")?.content ?? "ALYSSA task",
-        ).slice(0, 200),
+        title: contentText(input.messages.filter((message) => message.role === "user").at(-1)?.content).slice(0, 200) || "ALYSSA task",
         plan: capabilityPlan,
         totalSteps: MAX_STEPS,
       });
@@ -120,6 +101,12 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     ].join("\n"),
   };
   const convo: any[] = [capabilityMessage, ...input.messages];
+  const responseConversation = createAstraConversation(convo);
+  const tools = TOOL_SCHEMAS.map((tool) => ({
+    type: "function", ...tool.function,
+    // Existing tools validate inputs themselves and have optional fields.
+    strict: false,
+  }));
 
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
@@ -142,18 +129,16 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
           stepIndex: step,
           progress: Math.round((step / MAX_STEPS) * 90),
         });
-      const data = await callAstra(convo, TOOL_SCHEMAS);
-      const choice = data.choices?.[0];
-      const msg = choice?.message ?? {};
-      const calls = msg.tool_calls as any[] | undefined;
+      const output = await callAstraResponses(responseConversation.input, tools, responseConversation.gateway);
+      responseConversation.input.push(...output);
+      const calls = output.filter((item) => item.type === "function_call");
 
       if (calls && calls.length) {
-        convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: calls });
         for (const c of calls) {
-          const name = c.function?.name;
+          const name = c.name;
           let args: any = {};
           try {
-            args = JSON.parse(c.function?.arguments ?? "{}");
+            args = JSON.parse(c.arguments ?? "{}");
           } catch {
             args = {};
           }
@@ -186,16 +171,20 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
               lastSuccessfulChunk: result.ok === false ? undefined : String(name),
             });
           }
-          convo.push({
-            role: "tool",
-            tool_call_id: c.id,
-            content: JSON.stringify(result).slice(0, 6000),
+          responseConversation.input.push({
+            type: "function_call_output",
+            call_id: c.call_id,
+            output: JSON.stringify(result).slice(0, 6000),
           });
         }
         continue;
       }
 
-      const text = String(msg.content ?? "").trim();
+      const text = output.filter((item) => item.type === "message")
+        .flatMap((item) => item.content ?? [])
+        .filter((part) => part.type === "output_text")
+        .map((part) => part.text).join("\n").trim();
+      if (!text) throw new Error("AI returned no answer");
       if (jobId)
         await store.checkpointJob(jobId, {
           status: "completed",
