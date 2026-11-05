@@ -26,3 +26,28 @@ export function attachmentMemory(kind: "صورة" | "ملف", id: string, captio
 export function splitTelegramText(text: string): string[] {
   return text.match(/[\s\S]{1,3900}/gu) ?? [];
 }
+// Images the bot sent or received are stored as "[مرفق صورة... | telegram_file_id=ID]" so
+// later text follow-ups ("خليها أزرق") can find the last image in the same shared memory.
+export function imageMemoryTag(fileId: string, label = "من أليسا") {
+  return `[مرفق صورة: ${label} | telegram_file_id=${fileId}]`;
+}
+
+export function lastImageFileId(contents: string[]): string | null {
+  for (let i = contents.length - 1; i >= 0; i--) {
+    const m = contents[i]?.match(/مرفق صورة[^\]]*telegram_file_id=([\w-]+)/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+const EDIT_VERB = /(عدل|عدّل|غير|غيّر|بدل|بدّل|خلي|خليه|خليها|سويها|حط|حطلي|شيل|احذف|امسح|ضيف|أضف|اضف|زيد|كبر|صغر|لون|لوّن|اجعل|make|change|add|remove|turn)/i;
+const IMAGE_REF = /(صور|الخلفي|خلفي|لون|ستايل|إضاء|اضاء|وجه|شعر|عيون|ملابس|سماء|بحر|image|photo|picture|background)/i;
+const NOT_IMAGE = /(ملف|كود|سكربت|نص|رسالة|file|code|script)/i;
+
+/** True when a plain text message asks to modify the image that is currently in focus. */
+export function wantsImageFollowUpEdit(text: string, imageInFocus: boolean): boolean {
+  const t = text.trim();
+  if (!imageInFocus || !t || t.startsWith("/") || t.length > 400) return false;
+  if (NOT_IMAGE.test(t) || /[؟?]\s*$/.test(t)) return false;
+  return EDIT_VERB.test(t) && (IMAGE_REF.test(t) || t.length <= 80);
+}
