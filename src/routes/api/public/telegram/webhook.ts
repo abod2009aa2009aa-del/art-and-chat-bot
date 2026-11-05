@@ -20,7 +20,12 @@ import {
 } from "@/lib/telegram-tools";
 import { routeTelegramIntent } from "@/lib/telegram-intent-router";
 import { isModerationOwner } from "@/lib/telegram-moderation-auth";
-import { attachmentMemory, splitTelegramText } from "@/lib/alyssa/conversation";
+import { attachmentMemory, splitTelegramText, imageMemoryTag, lastImageFileId, wantsImageFollowUpEdit } from "@/lib/alyssa/conversation";
+
+function sentPhotoTag(res: any): string {
+  const id = res?.result?.photo?.at?.(-1)?.file_id;
+  return id ? ` ${imageMemoryTag(id)}` : "";
+}
 import {
   listSourceText,
   readSourceFile,
@@ -732,7 +737,13 @@ function systemPrompt(opts: {
 }) {
   const { isDev, isGroup, isAdmin, chatTitle, userName, userUsername } = opts;
   const now = baghdadNow();
-  return `أنت "${BOT_NAME}" — مساعد ذكي يتكلم عربي عراقي طبيعي، ودود وصريح. لا تتظاهر أنك إنسان أو أنك تدرّبت تدريبًا جديدًا؛ التحسين هنا في فهم الطلب والسياق والأدوات والذاكرة.
+  return `أنت "${BOT_NAME}" — بنت عراقية بالكلام: عفوية، ذكية، خفيفة دم، تحچي مثل صديقة قريبة مو مثل روبوت أو موظف خدمة عملاء. لا تبدين بـ"بالتأكيد" أو "كمساعد ذكاء اصطناعي"، ولا تكررين سؤال المستخدم، ولا تحطين مقدمات وخاتمات رسمية. ردّي مباشرة بلهجة عراقية، استخدمي المزح والتعليق الطبيعي لما يناسب، وغيّري طولك حسب الموقف. إذا انسألتِ مباشرة إذا إنتِ إنسانة، كوني صريحة إنك ذكاء اصطناعي بأسلوب خفيف.
+
+فهم الطلب أهم شي:
+- قبل الرد حددي بصمت: شنو يريد بالضبط؟ شنو آخر شي سويتيه (صورة/ملف/جواب)؟ هل هذا تعديل على الشي السابق؟
+- إذا قال "عدلها، غيرها، خليها، مو هيچ، أريد بدلها، زيد، نقص" فهو يقصد آخر نتيجة بالمحادثة — طبّقي التعديل عليها مباشرة وأرجعي النسخة الكاملة المعدلة، لا تسألين "شنو تقصد" إذا السياق واضح.
+- إذا صحّحچ أو قال "مو هذا"، اعترفي بخفة وصلّحي فورًا بدون اعتذار طويل.
+- الصور اللي حللتيها، الصور اللي سويتيها، الملفات اللي سويتيها أو حللتيها، والكلام — كلها ذاكرة وحدة. ارجعي لها طبيعيًا ("مثل الصورة اللي دزيتها قبل شوي").
 
 🕐 الوقت الحالي: ${now.human} (ISO: ${now.iso}). إذا سُئلت عن اليوم/الساعة/التاريخ/السنة أجب من هذا الوقت مباشرة بدقة.
 
@@ -1459,7 +1470,7 @@ async function handleUpdate(update: any, token: string) {
             userId: null,
             userName: BOT_NAME,
             role: "assistant",
-            content: `[عدّلت الصورة وأرسلتها] الطلب: ${instructions}`,
+            content: `[عدّلت الصورة وأرسلتها] الطلب: ${instructions}${sentPhotoTag(res)}`,
           });
         } catch (e: any) {
           await stopTyping(token, chatId, typingId);
@@ -1526,7 +1537,7 @@ async function handleUpdate(update: any, token: string) {
               userId: null,
               userName: BOT_NAME,
               role: "assistant",
-              content: `[عدّلت الصورة وأرسلتها] ${text}`,
+              content: `[عدّلت الصورة وأرسلتها] ${text}${sentPhotoTag(res)}`,
             });
             return;
           } catch (editErr) {
@@ -2202,7 +2213,7 @@ async function handleUpdate(update: any, token: string) {
           userId: null,
           userName: BOT_NAME,
           role: "assistant",
-          content: `[أنشأت صورة وأرسلتها] الوصف: ${prompt}`,
+          content: `[أنشأت صورة وأرسلتها] الوصف: ${prompt}${sentPhotoTag(res)}`,
         });
       } catch (e: any) {
         await stopTyping(token, chatId, typingId);
@@ -2478,6 +2489,34 @@ async function handleUpdate(update: any, token: string) {
       return;
     }
 
+    // ===== Follow-up image edit from plain speech ("خليها أزرق") using shared memory =====
+    {
+      const replyPhoto = msg.reply_to_message?.photo?.at?.(-1)?.file_id as string | undefined;
+      const recent = replyPhoto ? [] : (await loadHistory(chatId, 8)).map((m) => m.content);
+      const focusId = replyPhoto ?? lastImageFileId(recent.slice(-4));
+      if (focusId && wantsImageFollowUpEdit(text, true)) {
+        const typingId = await startTyping(token, chatId, msg.message_id);
+        try {
+          const fileUrl = await tgGetFileUrl(token, focusId);
+          const buf = Buffer.from(await (await fetch(fileUrl)).arrayBuffer());
+          const png = await aiEditImage(`data:image/jpeg;base64,${buf.toString("base64")}`, text);
+          await stopTyping(token, chatId, typingId);
+          const form = new FormData();
+          form.append("chat_id", String(chatId));
+          form.append("caption", `✏️ ${text.slice(0, 200)}`);
+          if (msg.message_id) form.append("reply_to_message_id", String(msg.message_id));
+          form.append("photo", new Blob([new Uint8Array(png)], { type: "image/png" }), "edited.png");
+          const res = await tgForm(token, "sendPhoto", form);
+          if (!res.ok) throw new Error("تعذر إرسال الصورة المعدلة");
+          await saveMsg({ chatId, chatType, userId: null, userName: BOT_NAME, role: "assistant", content: `[عدّلت آخر صورة حسب الطلب: ${text.slice(0, 300)}]${sentPhotoTag(res)}` });
+          return;
+        } catch (e: any) {
+          await stopTyping(token, chatId, typingId);
+          console.warn("[follow-up edit] falling back to chat:", e?.message ?? e);
+        }
+      }
+    }
+
     // ===== Chat reply =====
     const userIsAdmin = isGroup ? await isAdmin(token, chatId, userId) : false;
     const typingId = await startTyping(token, chatId, msg.message_id);
@@ -2606,7 +2645,7 @@ async function handleUpdate(update: any, token: string) {
         userId: null,
         userName: BOT_NAME,
         role: "assistant",
-        content: final,
+        content: orchDeliveries.length ? `${final}\n[أرسلت ملفات: ${orchDeliveries.map((d) => d.name).join(", ")}]` : final,
       });
       // Track our message id so we can react to user replies to it
       if (sent.ok) lastBotMsgIds.add(`${chatId}:${sent.result.message_id}`);
