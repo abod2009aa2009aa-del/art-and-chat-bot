@@ -23,3 +23,20 @@ describe("unified conversation", () => {
     expect(splitTelegramText(text).every((part) => part.length <= 3900)).toBe(true);
   });
 });
+import { imageMemoryTag, lastImageFileId, wantsImageFollowUpEdit } from "../conversation";
+describe("image follow-up memory", () => {
+  it("finds the latest image from bot or user in shared memory", () => {
+    const mem = [attachmentMemory("صورة", "USER1", "حللها"), "كلام عادي", `أنشأت صورة ${imageMemoryTag("BOT2")}`, "شكرا"];
+    expect(lastImageFileId(mem)).toBe("BOT2");
+    expect(lastImageFileId(["لا شيء"])).toBeNull();
+  });
+  it("treats short change requests after an image as image edits", () => {
+    expect(wantsImageFollowUpEdit("خلي الخلفية بحر", true)).toBe(true);
+    expect(wantsImageFollowUpEdit("غير لونها أزرق", true)).toBe(true);
+  });
+  it("does not hijack questions, files or chats without an image", () => {
+    expect(wantsImageFollowUpEdit("خلي الخلفية بحر", false)).toBe(false);
+    expect(wantsImageFollowUpEdit("عدل الملف وضيف دالة", true)).toBe(false);
+    expect(wantsImageFollowUpEdit("شنو لون الخلفية؟", true)).toBe(false);
+  });
+});
