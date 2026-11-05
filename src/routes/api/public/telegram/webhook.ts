@@ -1145,7 +1145,7 @@ async function analyzeDocumentWithOrchestrator(
 ): Promise<string> {
   const history = await conversationContext(chatId);
   const safeContent = redactSecrets(content);
-  const chat = await tg(tokenForMemory(), "getChat", { chat_id: chatId }).catch(() => null);
+  const chat = await tg(process.env.TELEGRAM_BOT_TOKEN ?? "", "getChat", { chat_id: chatId }).catch(() => null);
   await saveMsg({ chatId, chatType: chat?.result?.type ?? (chatId < 0 ? "supergroup" : "private"), userId: ownerId, userName: null, role: "user", content: attachmentMemory("ملف", "", ask, name, safeContent) });
   try {
     const { runOrchestrator } = await import("@/lib/alyssa/orchestrator.server");
