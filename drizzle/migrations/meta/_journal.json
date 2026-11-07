@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794034921352,
+      "tag": "0000_alisa_telegram_controls_and_protection",
+      "breakpoints": true
+    }
+  ]
+}
