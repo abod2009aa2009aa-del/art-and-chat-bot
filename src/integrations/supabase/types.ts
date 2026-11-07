@@ -14,6 +14,87 @@ export type Database = {
   }
   public: {
     Tables: {
+      alisa_controls: {
+        Row: {
+          busy: boolean
+          chat_id: number
+          content: string
+          created_at: string
+          file_id: string | null
+          id: string
+          kind: string
+          message_id: number | null
+          owner_id: number
+        }
+        Insert: {
+          busy?: boolean
+          chat_id: number
+          content: string
+          created_at?: string
+          file_id?: string | null
+          id?: string
+          kind: string
+          message_id?: number | null
+          owner_id: number
+        }
+        Update: {
+          busy?: boolean
+          chat_id?: number
+          content?: string
+          created_at?: string
+          file_id?: string | null
+          id?: string
+          kind?: string
+          message_id?: number | null
+          owner_id?: number
+        }
+        Relationships: []
+      }
+      alisa_conversations: {
+        Row: {
+          chat_id: number
+          reset_at: string
+        }
+        Insert: {
+          chat_id: number
+          reset_at?: string
+        }
+        Update: {
+          chat_id?: number
+          reset_at?: string
+        }
+        Relationships: []
+      }
+      alisa_request_windows: {
+        Row: {
+          requests: string[]
+          user_id: number
+        }
+        Insert: {
+          requests?: string[]
+          user_id: number
+        }
+        Update: {
+          requests?: string[]
+          user_id?: number
+        }
+        Relationships: []
+      }
+      alisa_update_receipts: {
+        Row: {
+          created_at: string
+          update_id: number
+        }
+        Insert: {
+          created_at?: string
+          update_id: number
+        }
+        Update: {
+          created_at?: string
+          update_id?: number
+        }
+        Relationships: []
+      }
       alyssa_file_versions: {
         Row: {
           content: string
@@ -396,7 +477,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      alisa_take_request: {
+        Args: { p_limit?: number; p_user_id: number }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
